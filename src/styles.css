@@ -2794,29 +2794,98 @@ select {
   margin-top: 20px;
 }
 .publish-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px 28px;
   max-width: 690px;
   margin: 0 auto 24px;
-  padding: 22px 24px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  padding: 24px 26px;
+  background:
+    radial-gradient(circle at 100% 0%, #e1ecff 0%, transparent 46%),
+    linear-gradient(135deg, #f7faff, #fff 65%);
+  border: 1px solid #d9e5fa;
+  border-radius: 18px;
+  box-shadow: 0 10px 28px #2e63c40f;
+}
+.publish-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid #cfe0fb;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #2f6bd9;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 1.2px;
+  line-height: 1;
+  text-transform: uppercase;
 }
 .publish-summary h2 {
-  font-size: 20px;
-  line-height: 1.3;
-  margin: 5px 0 6px;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.5px;
+  margin: 9px 0 5px;
 }
 .publish-summary p {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
 }
+.publish-stats {
+  display: flex;
+  gap: 10px;
+}
+.publish-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 84px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e0e8f5;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px #2e63c40a;
+}
+.publish-stat svg {
+  color: var(--brand-blue);
+  margin-bottom: 8px;
+}
+.publish-stat.private svg {
+  color: #8b95a6;
+}
+.publish-stat strong {
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.6px;
+}
+.publish-stat span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
 .publish-summary .publish-warning {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #f0e2c8;
+  border-radius: 10px;
+  background: #fffaf0;
   color: #8a5a00;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.publish-warning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 .workflow-footer {
   position: fixed;
@@ -2885,7 +2954,11 @@ select {
     font-size: 13px;
   }
   .publish-summary {
-    padding: 18px;
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+  .publish-stats {
+    width: 100%;
   }
   .draft-status {
     max-width: 160px;

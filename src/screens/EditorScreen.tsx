@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
+  Check,
   ChevronLeft,
   ExternalLink,
   Globe2,
   LoaderCircle,
+  LockKeyhole,
   Pencil,
+  RefreshCw,
 } from "lucide-react";
 import { api } from "../api";
 import { activeSetupSession, markCreatorPublished } from "../setup-session";
@@ -388,6 +391,7 @@ export default function EditorScreen() {
   const readyCount = content.products.filter(
     (product) => product.ready_to_sell,
   ).length;
+  const hiddenCount = content.products.length - readyCount;
   const step = editorStep(store.status, searchParams.get("step"), readyCount);
   const selectedProducts = content.products.filter(
     (product) => product.ready_to_sell,
@@ -777,24 +781,45 @@ export default function EditorScreen() {
               className="publish-summary"
               aria-label="Publishing summary"
             >
-              <div>
-                <span className="section-kicker">Ready to publish</span>
+              <div className="publish-summary-main">
+                <span className="publish-badge">
+                  <Check size={13} aria-hidden="true" />
+                  Ready to publish
+                </span>
                 <h2>
-                  {readyCount} {readyCount === 1 ? "offer" : "offers"} will be
-                  public
+                  {store.status === "published"
+                    ? "Your update is ready"
+                    : "Your storefront is ready"}
                 </h2>
                 <p>
-                  {content.products.length - readyCount} private draft{" "}
-                  {content.products.length - readyCount === 1
-                    ? "idea"
-                    : "ideas"}{" "}
-                  will stay hidden.
+                  {readyCount} {readyCount === 1 ? "offer" : "offers"} will be
+                  public.{" "}
+                  {hiddenCount > 0
+                    ? `${hiddenCount} private draft ${
+                        hiddenCount === 1 ? "idea stays" : "ideas stay"
+                      } hidden.`
+                    : "Every offer is included."}
                 </p>
+              </div>
+              <div className="publish-stats" aria-hidden="true">
+                <div className="publish-stat">
+                  <Globe2 size={16} />
+                  <strong>{readyCount}</strong>
+                  <span>public</span>
+                </div>
+                <div className="publish-stat private">
+                  <LockKeyhole size={16} />
+                  <strong>{hiddenCount}</strong>
+                  <span>private</span>
+                </div>
               </div>
               {store.status === "published" && (
                 <p className="publish-warning">
-                  Publishing will replace your current live version. Your public
-                  link stays the same.
+                  <RefreshCw size={15} aria-hidden="true" />
+                  <span>
+                    Publishing will replace your current live version. Your
+                    public link stays the same.
+                  </span>
                 </p>
               )}
             </section>
