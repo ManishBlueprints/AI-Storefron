@@ -1,0 +1,24 @@
+project_id = "ai-storefront-generator"
+[api]
+enabled = true
+port = 55321
+schemas = ["public", "graphql_public"]
+[db]
+port = 55322
+shadow_port = 55320
+major_version = 17
+[studio]
+enabled = true
+port = 55323
+api_url = "http://127.0.0.1"
+[local_smtp]
+enabled = false
+port = 55324
+[analytics]
+enabled = false
+port = 55327
+[edge_runtime]
+enabled = true
+inspector_port = 8384
+[functions.api]
+verify_jwt = false

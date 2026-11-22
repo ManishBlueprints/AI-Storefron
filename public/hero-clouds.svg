@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 240" preserveAspectRatio="none" fill="none">
+  <defs>
+    <linearGradient id="back" x2="0" y2="1"><stop stop-color="#bee7ff" stop-opacity=".55"/><stop offset="1" stop-color="#e4f4ff" stop-opacity=".9"/></linearGradient>
+    <linearGradient id="front" x2="0" y2="1"><stop stop-color="#f8fcff"/><stop offset="1" stop-color="#e5f3ff"/></linearGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation="9"/></filter>
+  </defs>
+  <path d="M-30 135C12 66 109 56 174 107C226 56 328 62 370 124C445 87 516 109 553 155C628 119 718 128 766 163C826 111 914 103 971 141C1009 80 1107 57 1182 102C1266 24 1409 56 1470 119V260H-30Z" fill="url(#back)" filter="url(#soft)"/>
+  <path d="M-30 184C11 121 101 100 173 146C228 102 321 118 355 175C427 137 501 156 538 193C609 166 679 179 720 202C779 163 867 162 914 192C965 146 1040 129 1105 161C1172 102 1264 98 1319 147C1388 112 1444 144 1470 177V260H-30Z" fill="#d9efff" fill-opacity=".8"/>
+  <path d="M-30 222C21 172 86 161 147 195C203 149 282 151 330 209C401 178 472 194 512 222C587 200 655 211 706 228C762 199 841 196 895 219C962 181 1031 183 1078 211C1145 165 1225 159 1282 196C1351 165 1426 190 1470 223V260H-30Z" fill="url(#front)"/>
+</svg>
