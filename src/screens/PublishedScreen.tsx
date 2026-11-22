@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Eye,
   Globe2,
+  Instagram,
   LockKeyhole,
   MessageCircle,
   Pencil,
@@ -94,6 +95,17 @@ export default function PublishedScreen() {
             >
               {copied === "public" ? <Check size={18} /> : <Copy size={18} />}
             </button>
+          </div>
+          <div className="instagram-bio-guide">
+            <Instagram size={21} aria-hidden="true" />
+            <div>
+              <h2>Add this link to your Instagram bio</h2>
+              <p>
+                Copy your public storefront link above. In Instagram, go to Edit
+                profile → Links → Add external link, then paste it and save.
+              </p>
+              <small>Use your public link, never your private edit link.</small>
+            </div>
           </div>
           <a
             className="button whatsapp-button full-width"

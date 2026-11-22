@@ -1,4 +1,4 @@
-import type { Content } from "../supabase/functions/_shared/domain";
+import type { Content } from "../shared/domain";
 import { activeSetupSession, setupProperties } from "./setup-session";
 import { allowedContext, eventQueue } from "./analytics-events";
 import type { Event, EventContext } from "./analytics-events";

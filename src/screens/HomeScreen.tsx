@@ -22,16 +22,82 @@ export default function HomeScreen() {
     [],
   );
 
-  const saved = readLocal<Record<string, unknown> | null>("sp:input", null);
+  const stored = readLocal<unknown>("sp:input", null);
+  const saved =
+    stored && typeof stored === "object"
+      ? (stored as Record<string, unknown>)
+      : {};
+  const description =
+    typeof saved.description === "string" ? saved.description.trim() : "";
+  const handle = typeof saved.handle === "string" ? saved.handle.trim() : "";
+  const existingOffer =
+    saved.offerStatus === "existing" && typeof saved.existingOffer === "string"
+      ? saved.existingOffer.trim()
+      : "";
+  const audience =
+    saved.audience === "under_5k"
+      ? "Under 5K"
+      : saved.audience === "5k_25k"
+        ? "5K to 25K"
+        : saved.audience === "25k_plus"
+          ? "25K+"
+          : "";
   const hasSetup = Boolean(
-    saved &&
-    (saved.description ||
-      saved.handle ||
-      saved.audience ||
-      saved.offerStatus ||
-      saved.existingOffer),
+    description ||
+    handle ||
+    existingOffer ||
+    audience ||
+    saved.offerStatus === "existing" ||
+    saved.offerStatus === "exploring" ||
+    saved.language === "hinglish",
   );
+  const savedPreview =
+    description ||
+    existingOffer ||
+    (handle
+      ? `Instagram: @${handle.replace(/^@/, "")}`
+      : audience
+        ? `Community: ${audience}`
+        : saved.offerStatus === "exploring"
+          ? "You chose to explore offer ideas."
+          : saved.offerStatus === "existing"
+            ? "You chose to build on an existing offer."
+            : "Store language: Hinglish");
   const recent = readLocal<string | null>("sp:recent", null);
+  const startButton = (
+    <Link
+      className={`button home-start${hasSetup ? " saved-setup-continue" : ""}${starting ? " is-starting" : ""}`}
+      to="/setup/about"
+      onClick={(event) => {
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        )
+          return;
+        event.preventDefault();
+        if (navigationTimer.current) return;
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          navigate("/setup/about");
+          return;
+        }
+        setStarting(true);
+        navigationTimer.current = setTimeout(
+          () => navigate("/setup/about"),
+          500,
+        );
+      }}
+    >
+      <span className="home-start-icon" aria-hidden="true">
+        <ArrowRight size={26} strokeWidth={1.7} />
+      </span>
+      <span className="home-start-label">
+        {hasSetup ? "Continue setup" : "Get Started"}
+      </span>
+    </Link>
+  );
   return (
     <>
       <Header />
@@ -50,49 +116,35 @@ export default function HomeScreen() {
             <br className="desktop-break" /> Review your draft, then publish a
             link to share.
           </p>
-          <div className="home-start-actions">
-            <Link
-              className={`button home-start${starting ? " is-starting" : ""}`}
-              to="/setup/about"
-              onClick={(event) => {
-                if (
-                  event.button !== 0 ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.altKey
-                )
-                  return;
-                event.preventDefault();
-                if (navigationTimer.current) return;
-                if (
-                  window.matchMedia("(prefers-reduced-motion: reduce)").matches
-                ) {
-                  navigate("/setup/about");
-                  return;
-                }
-                setStarting(true);
-                navigationTimer.current = setTimeout(
-                  () => navigate("/setup/about"),
-                  500,
-                );
-              }}
-            >
-              <span className="home-start-icon" aria-hidden="true">
-                <ArrowRight size={26} strokeWidth={1.7} />
-              </span>
-              <span className="home-start-label">Get Started</span>
-            </Link>
-            {hasSetup && (
-              <Link className="home-new" to="/setup/about?new=1">
-                Start new store
-              </Link>
-            )}
-          </div>
+          {!hasSetup && <div className="home-start-actions">{startButton}</div>}
           <span className="home-reassurance">
             No sign-up required. Nothing goes live until you publish.
           </span>
         </section>
+        {hasSetup && (
+          <section
+            className="saved-setup-card"
+            aria-labelledby="saved-setup-heading"
+          >
+            <div className="saved-setup-copy">
+              <span className="eyebrow">SAVED ON THIS DEVICE</span>
+              <h2 id="saved-setup-heading">Your setup is saved</h2>
+              <p>Pick up where you left off with your previous answers.</p>
+              <blockquote>
+                {savedPreview.length > 160
+                  ? savedPreview.slice(0, 157).trimEnd() + "…"
+                  : savedPreview}
+              </blockquote>
+            </div>
+            <div className="saved-setup-actions">
+              {startButton}
+              <Link className="saved-setup-fresh" to="/setup/about?new=1">
+                Start fresh
+              </Link>
+              <small>We’ll confirm before clearing your answers.</small>
+            </div>
+          </section>
+        )}
         <section className="home-example">
           <div className="home-example-copy">
             <span className="eyebrow">A HOME FOR YOUR EXPERTISE</span>

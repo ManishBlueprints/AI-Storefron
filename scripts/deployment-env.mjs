@@ -1,13 +1,12 @@
+import { apiBaseUrl } from "../shared/api-url.ts";
 export function assertDeploymentEnv(env) {
-  const base =
-    env.VITE_API_URL ||
-    (env.VITE_SUPABASE_URL ? `${env.VITE_SUPABASE_URL}/functions/v1/api` : "");
+  const base = apiBaseUrl(env);
   let url;
   try {
     url = new URL(base);
   } catch {
     throw new Error(
-      "Configure a hosted VITE_SUPABASE_URL or VITE_API_URL before deployment.",
+      "Configure a hosted VITE_CONVEX_URL or VITE_API_URL before deployment.",
     );
   }
   const host = url.hostname
@@ -24,7 +23,7 @@ export function assertDeploymentEnv(env) {
     /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.)/.test(host) ||
     host === "0.0.0.0" ||
     /^127\./.test(host) ||
-    /your_project/i.test(base) ||
+    /your_(?:project|deployment)/i.test(base) ||
     url.username ||
     url.password
   ) {

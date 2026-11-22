@@ -16,12 +16,8 @@ import {
   formatLabels,
   formats,
   priceBand,
-} from "../../supabase/functions/_shared/domain";
-import type {
-  Content,
-  Language,
-  Product,
-} from "../../supabase/functions/_shared/domain";
+} from "../../shared/domain";
+import type { Content, Language, Product } from "../../shared/domain";
 import { money, errorText } from "../utils";
 import { editorStep, restoreBlock } from "../editor-state";
 import { Header, Notice, Loading, Modal, LoadError } from "../components";
@@ -780,6 +776,7 @@ export default function EditorScreen() {
           <>
             <div className="buyer-preview public-store">
               <BioCard
+                instagramHandle={store.instagram_handle}
                 content={content}
                 headingLevel={2}
                 actions={previewEdit("bio")}

@@ -81,7 +81,10 @@ export default function PublicScreen() {
         <span>CREATED WITH SUPERPROFILE</span>
       </div>
       <main className="public-store">
-        <BioCard content={store.content} />
+        <BioCard
+          content={store.content}
+          instagramHandle={store.instagram_handle}
+        />
         <div className="products-heading">
           <h2>Explore my offers</h2>
           <span>

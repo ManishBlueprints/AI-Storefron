@@ -11,7 +11,8 @@ it.each([
   "https://test.localhost/api",
   "https://[::1]/api",
   "https://0.0.0.0/api",
-  "https://YOUR_PROJECT.supabase.co/functions/v1/api",
+  "https://YOUR_PROJECT.convex.site/api",
+  "https://YOUR_DEPLOYMENT.convex.site/api",
 ])("blocks deploying %s", (url) => {
   expect(() => assertDeploymentEnv({ VITE_API_URL: url })).toThrow();
 });
@@ -19,11 +20,24 @@ it("validates the actual override rather than only the hosted project URL", () =
   expect(() =>
     assertDeploymentEnv({
       VITE_API_URL: "http://127.0.0.1:55321/functions/v1/api",
-      VITE_SUPABASE_URL: "https://example.supabase.co",
+      VITE_CONVEX_URL: "https://example.convex.cloud",
     }),
   ).toThrow();
   expect(
-    assertDeploymentEnv({ VITE_SUPABASE_URL: "https://example.supabase.co" }),
-  ).toBe("https://example.supabase.co/functions/v1/api");
+    assertDeploymentEnv({ VITE_CONVEX_URL: "https://example.convex.cloud" }),
+  ).toBe("https://example.convex.site/api");
   expect(() => assertDeploymentEnv({})).toThrow();
+});
+
+it("derives Convex HTTP actions from the cloud deployment URL", () => {
+  expect(
+    assertDeploymentEnv({
+      VITE_CONVEX_URL: "https://bold-bandicoot-351.convex.cloud/",
+    }),
+  ).toBe("https://bold-bandicoot-351.convex.site/api");
+  expect(() =>
+    assertDeploymentEnv({
+      VITE_CONVEX_URL: "https://YOUR_DEPLOYMENT.convex.cloud",
+    }),
+  ).toThrow();
 });

@@ -4,19 +4,11 @@ import {
   preflight,
   priceBand,
   repairModel,
-} from "../supabase/functions/_shared/domain";
-import { templateContent } from "../supabase/functions/_shared/templates";
-import {
-  generate,
-  parseJSON,
-  systemPrompt,
-} from "../supabase/functions/_shared/generation";
-import {
-  constantTimeEqual,
-  hashToken,
-  newToken,
-} from "../supabase/functions/_shared/security";
-import type { ModelConfig } from "../supabase/functions/_shared/generation";
+} from "../shared/domain";
+import { templateContent } from "../shared/templates";
+import { generate, parseJSON, systemPrompt } from "../shared/generation";
+import { constantTimeEqual, hashToken, newToken } from "../shared/security";
+import type { ModelConfig } from "../shared/generation";
 
 const inputs = [
   "I teach fitness home workouts to beginners",

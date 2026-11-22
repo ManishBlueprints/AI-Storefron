@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { publicationMetrics } from "../supabase/functions/_shared/activation";
+import { publicationMetrics } from "../shared/activation";
 import { allowedContext, eventQueue } from "../src/analytics-events";
 const sessionId = "550e8400-e29b-41d4-a716-446655440000";
 const started = "2026-11-21T10:00:00.000Z";

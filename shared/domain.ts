@@ -49,13 +49,14 @@ export function bandTable() {
   return niches
     .map(
       (n) =>
-        `${n}: ${
-          formats.map((f) =>
-            `${f} ₹${priceBand(f, n).join("–")}${
-              f === "community" ? "/month" : ""
-            }`
-          ).join("; ")
-        }`,
+        `${n}: ${formats
+          .map(
+            (f) =>
+              `${f} ₹${priceBand(f, n).join("–")}${
+                f === "community" ? "/month" : ""
+              }`,
+          )
+          .join("; ")}`,
     )
     .join("\n");
 }
@@ -209,10 +210,9 @@ export function preflight(text: string): {
 } | null {
   const value = text.trim();
   if (
-    /\b(porn|pornography|sexual services|sell drugs|drug dealing|make bombs|build bombs|guaranteed? returns?|guaranteed? cure|cure cancer|cure diabetes)\b/i
-      .test(
-        value,
-      )
+    /\b(porn|pornography|sexual services|sell drugs|drug dealing|make bombs|build bombs|guaranteed? returns?|guaranteed? cure|cure cancer|cure diabetes)\b/i.test(
+      value,
+    )
   ) {
     return {
       input_quality: "unusable",
@@ -270,22 +270,27 @@ export function checkGeneratedCopy(text: string, path: (string | number)[]) {
     letters.some((letter) => !/\p{Script=Latin}/u.test(letter)) ||
     /[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F]/u.test(text)
   ) {
-    throw new z.ZodError([{
-      code: "custom",
-      path,
-      message: "Use readable Roman-script text only; remove stray characters.",
-    }]);
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path,
+        message:
+          "Use readable Roman-script text only; remove stray characters.",
+      },
+    ]);
   }
   if (
     !/[.!?]["'”’)]*$/u.test(text.trim()) ||
     /(?:\.{2,}|…)\s*["'”’)]*$/u.test(text.trim())
   ) {
-    throw new z.ZodError([{
-      code: "custom",
-      path,
-      message:
-        "Write complete sentences with ending punctuation. Shorten by rewriting, never by cutting off text.",
-    }]);
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path,
+        message:
+          "Write complete sentences with ending punctuation. Shorten by rewriting, never by cutting off text.",
+      },
+    ]);
   }
 }
 export function repairModel(

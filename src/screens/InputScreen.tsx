@@ -19,11 +19,8 @@ import {
   preflight,
   creatorContext,
   tokenSchema,
-} from "../../supabase/functions/_shared/domain";
-import type {
-  Audience,
-  Language,
-} from "../../supabase/functions/_shared/domain";
+} from "../../shared/domain";
+import type { Audience, Language } from "../../shared/domain";
 import { errorText } from "../utils";
 import { Header, Notice, Loading, Modal } from "../components";
 
@@ -452,7 +449,8 @@ export default function InputScreen() {
                       </div>
                     </div>
                     <p className="helper" id="description-help">
-                      Used as context only. We don’t read your profile yet.
+                      Shown as a clickable link on your published store. We
+                      don’t read your Instagram profile.
                     </p>
                   </div>
                 </>

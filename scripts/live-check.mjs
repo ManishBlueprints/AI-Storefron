@@ -1,13 +1,10 @@
+import { apiBaseUrl } from "../shared/api-url.ts";
 /** Real integration checks. Never substitutes fixtures for live generation. */
 import assert from "node:assert/strict";
-const root =
-  process.env.VITE_API_URL ||
-  (process.env.VITE_SUPABASE_URL
-    ? `${process.env.VITE_SUPABASE_URL}/functions/v1/api`
-    : "");
+const root = apiBaseUrl(process.env);
 if (!root)
   throw new Error(
-    "Set VITE_API_URL or VITE_SUPABASE_URL. Run with: node --env-file=.env.development.local scripts/live-check.mjs",
+    "Set VITE_API_URL or VITE_CONVEX_URL. Run with: node --env-file=.env.development.local scripts/live-check.mjs",
   );
 async function call(path, body, options = {}) {
   const response = await fetch(`${root}${path}`, {

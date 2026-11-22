@@ -1,25 +1,22 @@
+import { apiBaseUrl } from "../shared/api-url";
 import {
   contentSchema,
   publicContentSchema,
   slugSchema,
-} from "../supabase/functions/_shared/domain";
-import type {
-  Content,
-  GenerateInput,
-} from "../supabase/functions/_shared/domain";
-import { publicationSchema } from "../supabase/functions/_shared/activation";
+} from "../shared/domain";
+import type { Content, GenerateInput } from "../shared/domain";
+import { publicationSchema } from "../shared/activation";
 import { z } from "zod";
-const base = (
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.VITE_SUPABASE_URL
-    ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api`
-    : "")
-).replace(/\/$/, "");
-export const configured = Boolean(base && !base.includes("YOUR_PROJECT"));
+const base = apiBaseUrl({
+  VITE_API_URL: import.meta.env.VITE_API_URL,
+  VITE_CONVEX_URL: import.meta.env.VITE_CONVEX_URL,
+});
+export const configured = Boolean(base);
 const storeSchema = z.object({
   slug: slugSchema,
   status: z.enum(["draft", "published"]),
   content: publicContentSchema,
+  instagram_handle: z.string().nullable().optional(),
   views: z.number().optional(),
   updated_at: z.string().optional(),
   published_at: z.string().nullable().optional(),
@@ -48,7 +45,7 @@ export async function request(
 ) {
   if (!configured)
     throw new ApiError(
-      "Connect Supabase to bring your store to life. Add VITE_SUPABASE_URL to .env.development.local, then restart the app. Your description is saved on this device.",
+      "Connect Convex to bring your store to life. Add VITE_CONVEX_URL to .env.development.local, then restart the app. Your description is saved on this device.",
     );
   try {
     const response = await fetch(`${base}${path}`, {

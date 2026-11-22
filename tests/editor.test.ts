@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { editorStep, restoreBlock } from "../src/editor-state";
 import { verifyOwnerAccess } from "../src/owner-access";
 import { readLocal, tokenKey, writeLocal } from "../src/storage";
-import { templateContent } from "../supabase/functions/_shared/templates";
-import { contentSchema } from "../supabase/functions/_shared/domain";
+import { templateContent } from "../shared/templates";
+import { contentSchema } from "../shared/domain";
 
 afterEach(() => vi.unstubAllGlobals());
 it("keeps a valid saved token when a bad edit link fails verification", async () => {

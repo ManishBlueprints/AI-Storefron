@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import {
   BookOpen,
+  Instagram,
   CircleHelp,
   MessageCircle,
   Pencil,
@@ -10,8 +11,8 @@ import {
   Sparkles,
   Store as StoreIcon,
 } from "lucide-react";
-import { formatLabels } from "../supabase/functions/_shared/domain";
-import type { Content, Product } from "../supabase/functions/_shared/domain";
+import { formatLabels } from "../shared/domain";
+import type { Content, Product } from "../shared/domain";
 import { money } from "./utils";
 import { Notice } from "./components";
 
@@ -107,12 +108,17 @@ export function BioCard({
   content,
   actions,
   headingLevel = 1,
+  instagramHandle,
 }: {
   content: Content;
   actions?: ReactNode;
   headingLevel?: 1 | 2;
+  instagramHandle?: string | null;
 }) {
   const Heading = headingLevel === 1 ? "h1" : "h2";
+  const handle = instagramHandle?.trim().replace(/^@/, "");
+  const validHandle =
+    handle && /^[a-zA-Z0-9._]{1,50}$/.test(handle) ? handle : null;
   return (
     <section className="bio-card">
       <div className="bio-cover">
@@ -130,6 +136,17 @@ export function BioCard({
         </div>
         <Heading className="store-headline">{content.bio.headline}</Heading>
         <p>{content.bio.about}</p>
+        {validHandle && (
+          <a
+            className="instagram-profile-link"
+            href={`https://www.instagram.com/${encodeURIComponent(validHandle)}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Visit @${validHandle} on Instagram (opens in a new tab)`}
+          >
+            <Instagram size={18} aria-hidden="true" /> @{validHandle}
+          </a>
+        )}
       </div>
     </section>
   );

@@ -1,11 +1,8 @@
-/** Real local/hosted Supabase integration check. Creates one test storefront. */
+import { apiBaseUrl } from "../shared/api-url.ts";
+/** Real local/hosted Convex integration check. Creates one test storefront. */
 import assert from "node:assert/strict";
-const base =
-  process.env.VITE_API_URL ||
-  (process.env.VITE_SUPABASE_URL
-    ? `${process.env.VITE_SUPABASE_URL}/functions/v1/api`
-    : "");
-if (!base) throw new Error("Set VITE_API_URL or VITE_SUPABASE_URL first.");
+const base = apiBaseUrl(process.env);
+if (!base) throw new Error("Set VITE_API_URL or VITE_CONVEX_URL first.");
 async function call(path, body, method) {
   const response = await fetch(`${base}${path}`, {
     method: method || (body ? "POST" : "GET"),

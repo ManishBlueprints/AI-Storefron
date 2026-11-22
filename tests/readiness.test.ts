@@ -4,9 +4,9 @@ import {
   generateSchema,
   publishableContent,
   repairModel,
-} from "../supabase/functions/_shared/domain";
-import { systemPrompt } from "../supabase/functions/_shared/generation";
-import { templateContent } from "../supabase/functions/_shared/templates";
+} from "../shared/domain";
+import { systemPrompt } from "../shared/generation";
+import { templateContent } from "../shared/templates";
 it("requires detail for an existing offer and leaves offer context optional", () => {
   expect(
     generateSchema.safeParse({

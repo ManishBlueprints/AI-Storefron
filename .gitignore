@@ -3,9 +3,6 @@ dist/
 .env
 .env.*
 !.env.example
-supabase/.temp/
-supabase/.branches/
-supabase/functions/.env
 .wrangler/
 coverage/
 *.local

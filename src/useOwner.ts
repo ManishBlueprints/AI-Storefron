@@ -3,7 +3,7 @@ import { useParams, useLocation } from "react-router-dom";
 import { api } from "./api";
 import type { OwnedStore } from "./api";
 import { readLocal, tokenKey } from "./storage";
-import { tokenSchema } from "../supabase/functions/_shared/domain";
+import { tokenSchema } from "../shared/domain";
 import { errorText } from "./utils";
 import { verifyOwnerAccess } from "./owner-access";
 

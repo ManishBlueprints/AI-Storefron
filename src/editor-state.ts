@@ -1,5 +1,5 @@
-import { contentSchema } from "../supabase/functions/_shared/domain";
-import type { Content, Product } from "../supabase/functions/_shared/domain";
+import { contentSchema } from "../shared/domain";
+import type { Content, Product } from "../shared/domain";
 
 export function restoreBlock(
   content: Content,

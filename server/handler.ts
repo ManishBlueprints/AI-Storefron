@@ -9,12 +9,13 @@ import {
   regenerateSchema,
   slugSchema,
   tokenSchema,
-} from "../_shared/domain.ts";
-import { publicationMetrics } from "../_shared/activation.ts";
-import { generate, ModelUnavailableError } from "../_shared/generation.ts";
-import { constantTimeEqual, hashToken, newToken } from "../_shared/security.ts";
-import type { ModelConfig } from "../_shared/generation.ts";
-import type { SupabaseClient } from "@supabase/supabase-js";
+} from "../shared/domain.ts";
+import { publicationMetrics } from "../shared/activation.ts";
+import { generate, ModelUnavailableError } from "../shared/generation.ts";
+import { constantTimeEqual, hashToken, newToken } from "../shared/security.ts";
+import type { ModelConfig } from "../shared/generation.ts";
+import { ownerDTO } from "./repository";
+import type { StoreRepository } from "./repository";
 
 interface Settings {
   origin: string;
@@ -30,11 +31,7 @@ class HttpError extends Error {
     this.status = status;
   }
 }
-const publicFields = "slug,status,niche,language,content,published_at";
-const ownerFields = `${publicFields},views,updated_at,first_published_at`;
-const snapshotFields = "slug,status,published_content,published_at";
-
-export function createHandler(db: SupabaseClient, settings: Settings) {
+export function createHandler(db: StoreRepository, settings: Settings) {
   return async (req: Request): Promise<Response> => {
     const origin = req.headers.get("Origin");
     const headers = new Headers({
@@ -60,10 +57,9 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
     }
     try {
       const url = new URL(req.url);
-      const path = url.pathname
-        .replace(/^.*\/functions\/v1\/api(?=\/|$)/, "")
-        .replace(/^\/api(?=\/|$)/, "");
-      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      const path = url.pathname.replace(/^\/api(?=\/|$)/, "");
+      const ip =
+        req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
         req.headers.get("x-real-ip") ||
         "unknown";
       const ipKey = `ip:${await hashToken(`${settings.salt}:${ip}`)}`;
@@ -98,17 +94,11 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
         }
       }
       async function quota() {
-        const { data, error } = await db.rpc("claim_generation", {
-          p_key: ipKey,
-          p_ip_limit: settings.ipLimit,
-          p_daily_cap: settings.dailyCap,
-        });
-        if (error) {
-          throw new HttpError(
-            503,
-            "Generation is temporarily unavailable. Please retry.",
-          );
-        }
+        const data = await db.claimGeneration(
+          ipKey,
+          settings.ipLimit,
+          settings.dailyCap,
+        );
         if (!data?.allowed) {
           headers.set("Retry-After", "3600");
           throw new HttpError(
@@ -119,16 +109,7 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
         return Boolean(data.model_allowed);
       }
       async function owner(slug: string, token: string) {
-        const { data, error } = await db
-          .from("storefronts")
-          .select(
-            `${ownerFields},id,edit_token_hash,input_text,audience_size,offer_status,existing_offer,setup_session_id,setup_started_at,new_creator_session`,
-          )
-          .eq("slug", slug)
-          .maybeSingle();
-        if (error) {
-          throw new HttpError(503, "Couldn’t load your store. Please retry.");
-        }
+        const data = await db.findOwner(slug);
         // Hash and compare even when a slug is absent. Do not expose the hash.
         const valid = constantTimeEqual(
           await hashToken(token),
@@ -156,33 +137,30 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
         if (result.input_quality !== "ok") return respond(result);
         const slug = crypto.randomUUID();
         const edit_token = newToken();
-        const { error } = await db.from("storefronts").insert({
+        await db.insert({
           slug,
           edit_token_hash: await hashToken(edit_token),
           niche: result.content.niche,
           language: input.language,
           audience_size: input.audience_size ?? null,
           input_text: input.description,
+          instagram_handle: input.handle?.trim().replace(/^@/, "") || null,
           offer_status: input.offer_status ?? null,
-          existing_offer: input.offer_status === "existing"
-            ? (input.existing_offer ?? null)
-            : null,
+          existing_offer:
+            input.offer_status === "existing"
+              ? (input.existing_offer ?? null)
+              : null,
           setup_session_id: input.setup_session_id ?? null,
-          setup_started_at: input.setup_session_id &&
-              input.setup_started_at &&
-              Date.parse(input.setup_started_at) <= Date.now() &&
-              Date.parse(input.setup_started_at) >= Date.now() - 86400000
-            ? input.setup_started_at
-            : null,
+          setup_started_at:
+            input.setup_session_id &&
+            input.setup_started_at &&
+            Date.parse(input.setup_started_at) <= Date.now() &&
+            Date.parse(input.setup_started_at) >= Date.now() - 86400000
+              ? input.setup_started_at
+              : null,
           new_creator_session: input.new_creator_session === true,
           content: result.content,
         });
-        if (error) {
-          throw new HttpError(
-            503,
-            "We couldn’t save your draft. Your description is kept on this device; please retry.",
-          );
-        }
         return respond({ ...result, slug, edit_token });
       }
       if (req.method === "POST" && path === "/regenerate") {
@@ -226,30 +204,23 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
           modelAllowed,
         );
         if (result.input_quality !== "ok") return respond(result);
-        const { data, error } = await db
-          .from("storefronts")
-          .update({
+        const data = await db.update(
+          input.slug,
+          record.edit_token_hash,
+          input.expected_updated_at,
+          {
             content: result.content,
             language: input.language,
             niche: result.content.niche,
-          })
-          .eq("id", record.id)
-          .eq("updated_at", input.expected_updated_at)
-          .select(ownerFields)
-          .maybeSingle();
-        if (error) {
-          throw new HttpError(
-            503,
-            "Couldn’t save the new version. Please retry.",
-          );
-        }
+          },
+        );
         if (!data) {
           throw new HttpError(
             409,
             "Your store changed in another tab. Reload before trying again.",
           );
         }
-        return respond(data);
+        return respond(ownerDTO(data));
       }
       if (req.method === "PATCH" && path === "/storefront") {
         const input = patchSchema.parse(await json());
@@ -262,27 +233,23 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
         }
         // Source is assigned by generation, never supplied as an analytics claim by an edit.
         const content = { ...input.content, source: record.content.source };
-        const { data, error } = await db
-          .from("storefronts")
-          .update({
+        const data = await db.update(
+          input.slug,
+          record.edit_token_hash,
+          input.expected_updated_at,
+          {
             content,
             niche: content.niche,
             language: content.language,
-          })
-          .eq("id", record.id)
-          .eq("updated_at", input.expected_updated_at)
-          .select(ownerFields)
-          .maybeSingle();
-        if (error) {
-          throw new HttpError(503, "Couldn’t save your changes. Please retry.");
-        }
+          },
+        );
         if (!data) {
           throw new HttpError(
             409,
             "Your store changed in another tab. Reload before saving.",
           );
         }
-        return respond(data);
+        return respond(ownerDTO(data));
       }
       if (req.method === "POST" && path === "/publish") {
         const input = mutationSchema
@@ -313,46 +280,28 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
           now,
           input.current_setup_session_id,
         );
-        const { data, error } = await db
-          .from("storefronts")
-          .update({
+        const data = await db.update(
+          input.slug,
+          record.edit_token_hash,
+          input.expected_updated_at,
+          {
             status: "published",
             published_at: now,
             first_published_at: record.first_published_at || now,
             published_content: snapshot,
-          })
-          .eq("id", record.id)
-          .eq("updated_at", input.expected_updated_at)
-          .select(ownerFields)
-          .maybeSingle();
-        if (error) {
-          throw new HttpError(
-            503,
-            "Couldn’t publish yet. Your saved draft is safe; please retry.",
-          );
-        }
+          },
+        );
         if (!data) {
           throw new HttpError(
             409,
             "Your store changed while publishing. Reload and try again.",
           );
         }
-        return respond({ ...data, publication });
+        return respond({ ...ownerDTO(data), publication });
       }
       if (req.method === "GET" && path.startsWith("/public/")) {
         const slug = slugSchema.parse(path.slice("/public/".length));
-        const { data, error } = await db
-          .from("storefronts")
-          .select(snapshotFields)
-          .eq("slug", slug)
-          .eq("status", "published")
-          .maybeSingle();
-        if (error) {
-          throw new HttpError(
-            503,
-            "This store is temporarily unavailable. Please retry.",
-          );
-        }
+        const data = await db.findPublic(slug);
         if (!data) {
           throw new HttpError(
             404,
@@ -367,6 +316,7 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
           status: data.status,
           content: data.published_content,
           published_at: data.published_at,
+          instagram_handle: data.instagram_handle ?? null,
           niche: data.published_content.niche,
           language: data.published_content.language,
         });
@@ -377,49 +327,16 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
           slug,
           tokenSchema.parse(req.headers.get("x-edit-token")),
         );
-        const {
-          slug: ownedSlug,
-          status,
-          niche,
-          language,
-          content,
-          published_at,
-          views,
-          updated_at,
-          first_published_at,
-        } = record;
-        return respond({
-          slug: ownedSlug,
-          status,
-          niche,
-          language,
-          content,
-          published_at,
-          views,
-          updated_at,
-          first_published_at,
-        });
+        return respond(ownerDTO(record));
       }
       if (req.method === "POST" && path === "/track") {
         const input = z
           .object({ slug: slugSchema, event: z.literal("view") })
           .strict()
           .parse(await json());
-        const { data: allowed, error: limitError } = await db.rpc(
-          "claim_tracking",
-          { p_key: `track:${ipKey}` },
-        );
-        if (limitError) {
-          throw new HttpError(503, "Tracking is temporarily unavailable.");
-        }
+        const allowed = await db.claimTracking(`track:${ipKey}`);
         if (!allowed) return respond({ ok: true });
-        const { error } = await db.rpc("track_storefront", {
-          p_slug: input.slug,
-          p_event: input.event,
-        });
-        if (error) {
-          throw new HttpError(503, "Tracking is temporarily unavailable.");
-        }
+        await db.track(input.slug);
         return respond({ ok: true });
       }
       return respond({ error: "Endpoint not found." }, 404);
@@ -437,7 +354,8 @@ export function createHandler(db: SupabaseClient, settings: Settings) {
         );
       }
       if (
-        error instanceof HttpError || error instanceof ModelUnavailableError
+        error instanceof HttpError ||
+        error instanceof ModelUnavailableError
       ) {
         return respond({ error: error.message }, error.status);
       }

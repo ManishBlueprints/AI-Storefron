@@ -1,4 +1,4 @@
-import { tokenSchema } from "../supabase/functions/_shared/domain";
+import { tokenSchema } from "../shared/domain";
 import { tokenKey, writeLocal } from "./storage";
 
 export async function verifyOwnerAccess<T>(
