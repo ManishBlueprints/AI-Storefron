@@ -32,9 +32,27 @@ const topicOnly = await call("/generate", {
   language: "en",
 });
 assert.equal(topicOnly.status, 200, JSON.stringify(topicOnly.result));
-assert.equal(topicOnly.result.input_quality, "ok");
-assert.ok(topicOnly.result.slug && topicOnly.result.edit_token);
-assert.ok(Array.isArray(topicOnly.result.assumptions));
+if (topicOnly.result.input_quality === "too_vague") {
+  assert.ok(topicOnly.result.clarifying_question);
+  const answered = await call("/generate", {
+    description: "fitness",
+    language: "en",
+    context_tags: ["Beginners"],
+    clarification_answer: "I teach short home workouts for busy women",
+  });
+  assert.equal(answered.status, 200, JSON.stringify(answered.result));
+  assert.equal(
+    answered.result.input_quality,
+    "ok",
+    JSON.stringify(answered.result),
+  );
+  assert.ok(answered.result.slug && answered.result.edit_token);
+} else
+  assert.equal(
+    topicOnly.result.input_quality,
+    "ok",
+    JSON.stringify(topicOnly.result),
+  );
 const descriptions = [
   "I teach home fitness workouts for busy women.",
   "I teach personal finance budgeting for college students without investment recommendations.",

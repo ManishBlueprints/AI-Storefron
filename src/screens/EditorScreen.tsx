@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Link,
-  useLocation,
-  useNavigate,
-  useSearchParams,
-} from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Check,
   ChevronLeft,
@@ -284,22 +279,10 @@ export default function EditorScreen() {
     retry,
   } = useOwner();
   const navigate = useNavigate();
-  const routerLocation = useLocation();
   const [searchParams] = useSearchParams();
   const [content, setContent] = useState<Content | null>(null);
   const [showAssumptions, setShowAssumptions] = useState(true);
-  const assumptions = (() => {
-    const raw = (routerLocation.state as { assumptions?: unknown } | null)
-      ?.assumptions;
-    return Array.isArray(raw)
-      ? raw
-          .filter(
-            (item): item is string =>
-              typeof item === "string" && item.trim().length > 0,
-          )
-          .slice(0, 4)
-      : [];
-  })();
+  const assumptions = store?.assumptions ?? [];
   const [localSaved, setLocalSaved] = useState(true);
   const [baseRevision, setBaseRevision] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false),
@@ -516,6 +499,7 @@ export default function EditorScreen() {
       );
       takeSnapshot(scope, block);
       setStore(saved);
+      if (scope === "all") setShowAssumptions(true);
       setContent(saved.content);
       setBaseRevision(saved.updated_at);
       setDirty(false);

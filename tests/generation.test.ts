@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  composeDescription,
   contentSchema,
   creatorContext,
   preflight,
@@ -66,9 +65,6 @@ it("accepts topic-only input, merges context without duplication, and gates only
       existing_offer: "Morning flow sessions",
     }),
   ).toBe("I teach yoga. Morning flow sessions");
-  expect(composeDescription("fitness", ["Home workouts", "Beginners"])).toBe(
-    "fitness. Home workouts. Beginners",
-  );
   const fetcher = vi
     .fn()
     .mockResolvedValueOnce(response(model()))
@@ -103,26 +99,70 @@ it("keeps provider schemas strict without defaults and returns model assumptions
   if (result.input_quality === "ok")
     expect(result.assumptions).toEqual(assumptions);
 });
-it("returns tappable options when the model needs a clarification", async () => {
+it("keeps topic-specific clarification choices from the model", async () => {
   const fetcher = vi.fn().mockResolvedValue(
     response({
       ...model(),
       input_quality: "too_vague",
-      clarifying_question: "What kind of fitness do you teach?",
-      clarification_options: ["Yoga", "Gym workouts", "Weight loss"],
+      clarifying_question: "What kind of books do you share?",
+      clarification_options: [
+        "Book reviews",
+        "Reading habits",
+        "Recommendations",
+      ],
     }),
   );
   const result = await generate(
-    { description: "fitness", language: "en" },
+    { description: "books", language: "en" },
     { ...config, fetcher },
   );
   expect(result.input_quality).toBe("too_vague");
   if (result.input_quality !== "ok")
     expect(result.clarification_options).toEqual([
-      "Yoga",
-      "Gym workouts",
-      "Weight loss",
+      "Book reviews",
+      "Reading habits",
+      "Recommendations",
     ]);
+});
+it("allows a typed clarification without unrelated fallback choices", async () => {
+  const fetcher = vi.fn().mockResolvedValue(
+    response({
+      ...model(),
+      input_quality: "too_vague",
+      clarifying_question: "What kind of books do you share?",
+      clarification_options: [],
+    }),
+  );
+  const result = await generate(
+    { description: "books", language: "en" },
+    { ...config, fetcher },
+  );
+  expect(result.input_quality).toBe("too_vague");
+  if (result.input_quality !== "ok")
+    expect(result.clarification_options).toEqual([]);
+});
+it("honours semantic clarification regardless of known categories or word count", async () => {
+  for (const description of [
+    "fitness",
+    "book reviews for beginners",
+    "I make book notes and share reading tips",
+  ]) {
+    const fetcher = vi.fn().mockResolvedValue(
+      response({
+        ...model(),
+        input_quality: "too_vague",
+        clarifying_question: "What kind of content do you share?",
+      }),
+    );
+    const result = await generate(
+      { description, language: "en" },
+      { ...config, fetcher },
+    );
+    expect(result.input_quality).toBe("too_vague");
+    if (result.input_quality === "ok")
+      expect(contentSchema.safeParse(result.content).success).toBe(true);
+    expect(fetcher).toHaveBeenCalled();
+  }
 });
 describe.each(inputs)("fallback for %s", (description) => {
   it.each(["en", "hinglish"] as const)(
@@ -526,4 +566,91 @@ it("instructs every generation scope to use complete paragraphs and plain profes
       "never leave a sentence, list, or paragraph unfinished",
     );
   }
+});
+
+it.each(["CRM", "HR", "B2B", "nginx", "उद्यान", "gymnastics"])(
+  "does not reject valid or unfamiliar text %s with vowel heuristics",
+  (text) => {
+    expect(preflight(text)).toBeNull();
+  },
+);
+it.each(["123456", "!!!", "aaaaaaa", "asdfghjkl qwerty"])(
+  "rejects obvious junk %s",
+  (text) => {
+    expect(preflight(text)?.input_quality).toBe("unusable");
+  },
+);
+it("preserves full descriptions and separate context in the model request", async () => {
+  const description = "I teach pottery. ".repeat(63).slice(0, 1000);
+  const fetcher = vi.fn().mockResolvedValue(response(model()));
+  await generate(
+    {
+      description,
+      language: "en",
+      context_tags: ["Beginners"],
+      clarification_answer: "Pottery classes",
+    },
+    { ...config, fetcher },
+  );
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  const data = JSON.parse(body.messages[1].content);
+  expect(data.description).toBe(description);
+  expect(data.context_tags).toEqual(["Beginners"]);
+  expect(data.clarification_answer).toBe("Pottery classes");
+});
+it("does not convert another clarification into invented cards after an answer", async () => {
+  const fetcher = vi.fn().mockResolvedValue(
+    response({
+      ...model(),
+      input_quality: "too_vague",
+      clarifying_question: "What do you mean?",
+    }),
+  );
+  const result = await generate(
+    {
+      description: "not sure",
+      language: "en",
+      clarification_answer: "anything",
+    },
+    { ...config, fetcher },
+  );
+  expect(result.input_quality).toBe("unusable");
+  expect("content" in result).toBe(false);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it("defers random words with vowels to semantic validation", async () => {
+  const fetcher = vi.fn().mockResolvedValue(
+    response({
+      ...model(),
+      input_quality: "unusable",
+      clarifying_question: "Please describe a skill you teach.",
+    }),
+  );
+  const result = await generate(
+    { description: "plofrane zubnoki", language: "en" },
+    { ...config, fetcher },
+  );
+  expect(result.input_quality).toBe("unusable");
+});
+
+it("accepts a compact clarification without generating placeholder bio or offers", async () => {
+  const fetcher = vi.fn().mockResolvedValue(
+    response({
+      input_quality: "too_vague",
+      clarifying_question: "What kind of pottery do you teach?",
+      clarification_options: ["Wheel throwing", "Hand building", "Glazing"],
+      bio: null,
+      products: [],
+      niche: "other",
+      language: "en",
+      assumptions: [],
+    }),
+  );
+  const result = await generate(
+    { description: "pottery", language: "en" },
+    { ...config, fetcher },
+  );
+  expect(result.input_quality).toBe("too_vague");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect("content" in result).toBe(false);
 });

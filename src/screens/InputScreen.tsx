@@ -17,7 +17,6 @@ import {
   generateSchema,
   preflight,
   creatorContext,
-  composeDescription,
   detectNiche,
   focusSuggestions,
 } from "../../shared/domain";
@@ -33,6 +32,8 @@ interface InputDraft {
   offerStatus: "existing" | "exploring" | null;
   existingOffer: string;
   tags: string[];
+  clarificationAnswer: string;
+  checkedContext: string;
 }
 const initial: InputDraft = {
   description: "",
@@ -42,6 +43,8 @@ const initial: InputDraft = {
   offerStatus: null,
   existingOffer: "",
   tags: [],
+  clarificationAnswer: "",
+  checkedContext: "",
 };
 const audienceTags = ["Beginners", "Busy professionals", "Students", "Women"];
 interface Clarification {
@@ -73,6 +76,12 @@ export default function InputScreen() {
     if (!saved || typeof saved !== "object") return initial;
     const value = saved as Partial<InputDraft>;
     return {
+      clarificationAnswer:
+        typeof value.clarificationAnswer === "string"
+          ? value.clarificationAnswer.slice(0, 120)
+          : "",
+      checkedContext:
+        typeof value.checkedContext === "string" ? value.checkedContext : "",
       offerStatus:
         value.offerStatus === "existing" || value.offerStatus === "exploring"
           ? value.offerStatus
@@ -108,15 +117,32 @@ export default function InputScreen() {
   );
   const stepHeading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    setError("");
     stepHeading.current?.focus();
     window.scrollTo(0, 0);
   }, [about]);
   useEffect(() => {
-    if (!about && !draft.description.trim()) {
+    if (
+      !about &&
+      (!draft.description.trim() ||
+        draft.checkedContext !==
+          JSON.stringify([
+            draft.description.trim(),
+            draft.language,
+            draft.tags,
+            draft.clarificationAnswer,
+          ]))
+    ) {
       navigate("/setup/about", { replace: true });
     }
-  }, [about, draft.description, navigate]);
+  }, [
+    about,
+    draft.description,
+    draft.checkedContext,
+    draft.language,
+    draft.tags,
+    draft.clarificationAnswer,
+    navigate,
+  ]);
   function cancelNew() {
     setConfirmNew(false);
     navigate("/setup/about", { replace: true });
@@ -129,16 +155,39 @@ export default function InputScreen() {
     navigate("/setup/about", { replace: true });
     setConfirmNew(false);
   }
+  const [checking, setChecking] = useState(false);
+  const feedback = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [storageError, setStorageError] = useState(false),
     [clarify, setClarify] = useState<Clarification | null>(null);
   const pending = useRef(false);
+  const checkVersion = useRef(0);
+  useEffect(
+    () => () => {
+      checkVersion.current += 1;
+    },
+    [location.pathname],
+  );
   const recent = readLocal<string | null>("sp:recent", null);
   const focusTags = focusSuggestions[detectNiche(draft.description)];
   useEffect(() => {
     setStorageError(!writeLocal("sp:input", draft));
   }, [draft]);
+  function contextKey(answer = draft.clarificationAnswer) {
+    return JSON.stringify([
+      draft.description.trim(),
+      draft.language,
+      draft.tags,
+      answer,
+    ]);
+  }
+  function showFeedback() {
+    requestAnimationFrame(() => {
+      feedback.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+      feedback.current?.focus();
+    });
+  }
   function startSetup() {
     const { session, started } = beginSetupSession();
     if (started) {
@@ -157,7 +206,13 @@ export default function InputScreen() {
   }
   const update = (value: Partial<InputDraft>) => {
     startSetup();
-    setDraft((current) => ({ ...current, ...value }));
+    setDraft((current) => ({
+      ...current,
+      ...value,
+      ...(value.description !== undefined
+        ? { clarificationAnswer: "", checkedContext: "" }
+        : {}),
+    }));
     setError("");
     setClarify(null);
   };
@@ -184,25 +239,91 @@ export default function InputScreen() {
   function answerClarify(answer: string) {
     const value = answer.trim();
     if (!value || pending.current) return;
-    const known = draft.tags.some(
-      (tag) => tag.toLowerCase() === value.toLowerCase(),
-    );
-    const tags = known ? draft.tags : [...draft.tags, value].slice(-5);
-    setDraft((current) => ({ ...current, tags }));
-    setError("");
-    setClarify(null);
-    void generateWith(composeDescription(draft.description, tags));
+    void checkAbout(value);
   }
-  async function generateWith(description: string) {
+  async function checkAbout(answer = draft.clarificationAnswer) {
+    if (pending.current) return;
+    const gate = preflight(draft.description);
+    if (gate && (!answer || gate.input_quality === "unusable")) {
+      setError(
+        gate.input_quality === "unusable" ? gate.clarifying_question : "",
+      );
+      setClarify(
+        gate.input_quality === "too_vague"
+          ? {
+              question: gate.clarifying_question,
+              options: gate.clarification_options,
+              answer: "",
+            }
+          : null,
+      );
+      showFeedback();
+      return;
+    }
+    if (draft.checkedContext === contextKey(answer)) {
+      navigate("/setup/offers");
+      return;
+    }
+    const version = ++checkVersion.current;
+    pending.current = true;
+    setChecking(true);
+    setError("");
+    try {
+      const result = await api.assessInput({
+        description: draft.description,
+        language: draft.language,
+        context_tags: draft.tags,
+        ...(answer ? { clarification_answer: answer } : {}),
+      });
+      if (version !== checkVersion.current) return;
+      if (result.input_quality === "ok") {
+        setDraft((current) => ({
+          ...current,
+          clarificationAnswer: answer,
+          checkedContext: contextKey(answer),
+        }));
+        setClarify(null);
+        navigate("/setup/offers");
+      } else {
+        setDraft((current) => ({ ...current, checkedContext: "" }));
+        setClarify(
+          result.input_quality === "too_vague"
+            ? {
+                question: result.clarifying_question!,
+                options: result.clarification_options,
+                answer: "",
+              }
+            : null,
+        );
+        setError(
+          result.input_quality === "unusable"
+            ? result.clarifying_question!
+            : "",
+        );
+        showFeedback();
+      }
+    } catch (error) {
+      if (version !== checkVersion.current) return;
+      setError(errorText(error));
+      showFeedback();
+    } finally {
+      pending.current = false;
+      setChecking(false);
+    }
+  }
+  async function generateWith(
+    description: string,
+    clarificationAnswer = draft.clarificationAnswer,
+    tags = draft.tags,
+  ) {
     const session = startSetup();
-    const gate = preflight(
-      creatorContext({
-        description,
-        offer_status: draft.offerStatus,
-        existing_offer: draft.existingOffer,
-      }),
-    );
-    if (gate) {
+    const context = creatorContext({
+      description,
+      offer_status: draft.offerStatus,
+      existing_offer: draft.existingOffer,
+    });
+    const gate = preflight(context);
+    if (gate && !clarificationAnswer) {
       if (gate.input_quality === "unusable") {
         setClarify(null);
         setError(gate.clarifying_question);
@@ -222,6 +343,10 @@ export default function InputScreen() {
         ? { existing_offer: draft.existingOffer }
         : {}),
       description,
+      context_tags: tags,
+      ...(clarificationAnswer
+        ? { clarification_answer: clarificationAnswer }
+        : {}),
       audience_size: draft.audience,
       language: draft.language,
       ...(draft.handle ? { handle: draft.handle } : {}),
@@ -250,6 +375,8 @@ export default function InputScreen() {
             answer: "",
           });
         }
+        navigate("/setup/about");
+        showFeedback();
         track("generate_failed", { language: draft.language });
         return;
       }
@@ -278,11 +405,90 @@ export default function InputScreen() {
         return;
       }
       startSetup();
-      navigate("/setup/offers");
+      if (clarify && !clarify.answer.trim()) {
+        showFeedback();
+        return;
+      }
+      await checkAbout(clarify?.answer.trim() || draft.clarificationAnswer);
       return;
     }
-    await generateWith(composeDescription(draft.description, draft.tags));
+    if (draft.checkedContext !== contextKey()) {
+      navigate("/setup/about");
+      return;
+    }
+    await generateWith(draft.description);
   }
+  const inputFeedback = (
+    <div
+      ref={feedback}
+      tabIndex={-1}
+      id="description-feedback"
+      style={{ outline: "none" }}
+    >
+      {checking && <p role="status">Checking your description…</p>}
+      {clarify && (
+        <div className="clarify-card" aria-live="polite">
+          <div className="clarify-head">
+            <Sparkles size={16} />
+            <p>{clarify.question}</p>
+          </div>
+          {clarify.options.length > 0 && (
+            <div className="clarify-options">
+              {clarify.options.map((option) => (
+                <button
+                  type="button"
+                  key={option}
+                  onClick={() => answerClarify(option)}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="clarify-answer">
+            <input
+              aria-label="Your answer"
+              value={clarify.answer}
+              maxLength={120}
+              placeholder="Or type a quick answer"
+              onChange={(event) =>
+                setClarify((current) =>
+                  current
+                    ? { ...current, answer: event.target.value }
+                    : current,
+                )
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  answerClarify(clarify.answer);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="button secondary"
+              disabled={!clarify.answer.trim()}
+              onClick={() => answerClarify(clarify.answer)}
+            >
+              Use this
+            </button>
+          </div>
+          <button
+            type="button"
+            className="clarify-dismiss"
+            onClick={() => {
+              setClarify(null);
+              if (!about) navigate("/setup/about");
+            }}
+          >
+            {about ? "Edit my description instead" : "Change my description"}
+          </button>
+        </div>
+      )}
+      {error && <Notice>{error}</Notice>}
+    </div>
+  );
   return (
     <>
       <Header />
@@ -327,8 +533,8 @@ export default function InputScreen() {
           )}
         </nav>
         <section className="input-panel">
-          <form onSubmit={submit} aria-busy={busy}>
-            <fieldset disabled={busy} className="generation-fields">
+          <form onSubmit={submit} aria-busy={busy || checking}>
+            <fieldset disabled={busy || checking} className="generation-fields">
               <div className="panel-heading">
                 <span className="section-icon">
                   <WandSparkles size={19} />
@@ -359,13 +565,15 @@ export default function InputScreen() {
                       value={draft.description}
                       onChange={(e) => update({ description: e.target.value })}
                       placeholder="I’m a yoga instructor helping busy professionals find 20 minutes of calm in their day…"
-                      aria-describedby="description-count"
+                      aria-describedby="description-count description-feedback"
+                      aria-invalid={Boolean(error)}
                       required
                     />
                     <span className="char-counter" id="description-count">
                       {draft.description.length}/1000
                     </span>
                   </div>
+                  {inputFeedback}
                   <div className="examples">
                     <span>Need a little inspiration?</span>
                     <div>
@@ -570,69 +778,7 @@ export default function InputScreen() {
                   </div>
                 </>
               )}
-              {clarify && (
-                <div className="clarify-card" aria-live="polite">
-                  <div className="clarify-head">
-                    <Sparkles size={16} />
-                    <p>{clarify.question}</p>
-                  </div>
-                  {clarify.options.length > 0 && (
-                    <div className="clarify-options">
-                      {clarify.options.map((option) => (
-                        <button
-                          type="button"
-                          key={option}
-                          onClick={() => answerClarify(option)}
-                        >
-                          {option}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="clarify-answer">
-                    <input
-                      aria-label="Your answer"
-                      value={clarify.answer}
-                      maxLength={120}
-                      placeholder="Or type a quick answer"
-                      onChange={(event) =>
-                        setClarify((current) =>
-                          current
-                            ? { ...current, answer: event.target.value }
-                            : current,
-                        )
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          answerClarify(clarify.answer);
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="button secondary"
-                      disabled={!clarify.answer.trim()}
-                      onClick={() => answerClarify(clarify.answer)}
-                    >
-                      Use this
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    className="clarify-dismiss"
-                    onClick={() => {
-                      setClarify(null);
-                      if (!about) navigate("/setup/about");
-                    }}
-                  >
-                    {about
-                      ? "Edit my description instead"
-                      : "Change my description"}
-                  </button>
-                </div>
-              )}
-              {error && <Notice>{error}</Notice>}
+              {!about && error && <Notice>{error}</Notice>}
               {storageError && (
                 <Notice tone="info">
                   This browser can’t save drafts. Keep this tab open and save
@@ -648,11 +794,18 @@ export default function InputScreen() {
                 </Link>
                 <button
                   className="button primary generate-button"
-                  disabled={!draft.description.trim()}
+                  disabled={
+                    !draft.description.trim() ||
+                    (about && Boolean(clarify) && !clarify?.answer.trim())
+                  }
                   type="submit"
                 >
                   {!about && <Sparkles size={18} />}
-                  {about ? "Continue" : "Generate my storefront"}
+                  {about
+                    ? checking
+                      ? "Checking…"
+                      : "Continue"
+                    : "Generate my storefront"}
                 </button>
               </div>
               <p className="form-foot">

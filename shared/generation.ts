@@ -70,13 +70,17 @@ export function responseSchema(scope?: Scope) {
       ? bioSchema
       : scope?.scope === "product"
         ? product
-        : modelSchema.extend({ products: z.array(product).min(2).max(4) });
+        : modelSchema.extend({
+            bio: bioSchema.nullable(),
+            products: z.array(product).max(4),
+          });
   const { $schema: _schema, ...json } = z.toJSONSchema(schema, {
     target: "draft-7",
   });
   // Providers reject defaults in strict JSON schemas; parsing still applies them.
   return stripDefaults(json);
 }
+export const inputQualityInstructions = `Judge the meaning and specificity of the ORIGINAL description together with any existing offer and clarification answer. Never decide quality using a fixed topic list or word count. Audience tags alone do not establish a skill or angle. A bare broad topic such as fitness, pottery, books, gardening, music, or an unfamiliar but meaningful field usually needs one focused clarification. A specific skill or description such as “beginner pottery classes” or “I teach English” is enough: draft with conservative assumptions. Accept typos, acronyms (CRM, HR, B2B), informal language and Hinglish. Never treat an unfamiliar word as gibberish just because it is absent from a dictionary. If uncertain what a word means, ask the creator rather than guessing. Meaningless random letters, nonsense sentences, unrelated words, or unsafe commercial requests are unusable: ask for a clearer skill without fabricating offers. For too_vague, return one short question naming the actual topic, with 3-4 relevant choices when possible and no unrelated default choices. If meaning is unknown, ask what it means and return an empty choices array; the user can type an answer. If a clarification_answer is present, do not ask another question: draft if there is meaningful context, otherwise mark unusable and request a clearer description. An answer like “anything” or “idk” is not enough. input_quality is ok, too_vague, or unusable. Never invent expertise, credentials, assets, or an audience. Record 2-4 short assumptions only when needed, otherwise []. For too_vague or unusable, set bio to null, products to [], niche to other, and assumptions to []; do not generate placeholder storefront copy. For ok, include a valid bio and 2-4 products with DIFFERENT formats. Community billing is monthly. Use sequential IDs p1, p2, etc.`;
 export function systemPrompt(input: GenerateInput, scope?: Scope) {
   return `You are a creator-commerce strategist for India. Turn a short creator description into a storefront draft. Return ONLY valid JSON. No prose or markdown. This product generates shareable storefront drafts; do not add contact details, requests to message the creator, or claims of integrated booking, checkout, or payment.
 ${
@@ -86,7 +90,7 @@ ${
           ? `Preserve product ID ${scope.product_id} and its current format.`
           : "The only keys are headline and about."
       }`
-    : `First judge input: unusable = gibberish, nothing about skills or content, or unsafe topics (adult, illegal, guaranteed medical or financial outcomes); too_vague = only a generic non-answer such as “I make content” or “not sure”, with no topic, skill, or profession. A single topic, named profession, or teaching subject is enough for a useful first draft: “fitness”, “yoga”, or “cooking” are ok, never too_vague. Do not ask which sub-niche when the broad topic is already clear; choose a sensible beginner scope and record it in assumptions. Do not require an existing product, audience, curriculum, or business plan: discovering offers is your job. Accept typos and informal writing. “I am an English tutor and make online videos” means teaching the English language and is sufficient; do not ask which subject they tutor in English. Make conservative beginner-friendly suggestions when audience or specialism is missing, without inventing credentials or existing assets. List 2-4 short assumptions about the audience, level, or offer focus you chose; return an empty list when nothing was assumed. When input_quality is too_vague, write one clarifying_question and 3-4 short clarification_options the creator can tap; for ok, use null and an empty list. Include 2-4 products with DIFFERENT formats. Community billing is monthly. Use sequential IDs p1, p2, etc.`
+    : inputQualityInstructions
 }
 Return exactly this JSON schema, with no extra keys: ${JSON.stringify(
     responseSchema(scope),
@@ -115,20 +119,38 @@ export function parseJSON(text: string): unknown {
       .replace(/\s*```$/, ""),
   );
 }
-function toContent(raw: unknown, language: Language): Generation {
-  const result = repairModel(raw, language);
-  if (result.input_quality !== "ok") {
+function toContent(
+  raw: unknown,
+  language: Language,
+  clarificationAnswered = false,
+): Generation {
+  const clarification = z
+    .object({
+      input_quality: z.enum(["too_vague", "unusable"]),
+      clarifying_question: z.string().trim().min(1).max(200),
+      clarification_options: z
+        .array(z.string().trim().min(1).max(60))
+        .max(5)
+        .default([]),
+    })
+    .safeParse(raw);
+  if (clarification.success) {
+    const result = clarification.data;
+    const exhausted =
+      clarificationAnswered && result.input_quality === "too_vague";
     return {
-      input_quality: result.input_quality,
-      clarifying_question:
-        result.clarifying_question ||
-        "Please describe a safe skill or topic you create content about.",
+      input_quality: exhausted ? "unusable" : result.input_quality,
+      clarifying_question: exhausted
+        ? "Please describe one skill you teach or the content you create so we can suggest relevant offers."
+        : result.clarifying_question ||
+          "Please describe a skill or topic you create content about.",
       clarification_options:
-        result.input_quality === "too_vague"
-          ? result.clarification_options
+        result.input_quality === "too_vague" && !exhausted
+          ? [...new Set(result.clarification_options)]
           : [],
     };
   }
+  const result = repairModel(raw, language);
   return {
     input_quality: "ok",
     clarifying_question: null,
@@ -209,9 +231,14 @@ export async function generate(
   scope?: Scope,
   allowModel = true,
 ): Promise<Generation> {
+  const context = creatorContext(input);
   if (!scope) {
-    const gate = preflight(creatorContext(input));
-    if (gate) return gate;
+    const gate = preflight(context);
+    if (
+      gate &&
+      (!input.clarification_answer || gate.input_quality === "unusable")
+    )
+      return gate;
   }
   const fallback = () => {
     const base = templateContent(
@@ -294,6 +321,8 @@ export async function generate(
               description: input.description,
               offer_status: input.offer_status,
               existing_offer: input.existing_offer,
+              context_tags: input.context_tags,
+              clarification_answer: input.clarification_answer,
               handle: input.handle,
               ...(scope
                 ? { current: scope.current, product_id: scope.product_id }
@@ -402,6 +431,17 @@ export async function generate(
           );
         }
         const raw = parseJSON(payload.choices?.[0]?.message?.content ?? "");
+        if (scope?.scope === "all") {
+          const result = toContent(raw, input.language, true);
+          if (result.input_quality !== "ok")
+            throw new Error(
+              "Regenerate the complete storefront from the saved context.",
+            );
+          return {
+            ...result,
+            content: scopeContent(raw, scope, input.language),
+          };
+        }
         return scope
           ? {
               input_quality: "ok",
@@ -409,7 +449,7 @@ export async function generate(
               assumptions: [],
               content: scopeContent(raw, scope, input.language),
             }
-          : toContent(raw, input.language);
+          : toContent(raw, input.language, Boolean(input.clarification_answer));
       } catch (error) {
         if (error instanceof ModelUnavailableError) throw error;
         lastFailure =

@@ -11,6 +11,9 @@ export interface StoreRecord {
   instagram_handle: string | null;
   offer_status: "existing" | "exploring" | null;
   existing_offer: string | null;
+  assumptions?: string[];
+  context_tags?: string[];
+  clarification_answer?: string;
   content: Content;
   published_content: Content | null;
   views: number;
@@ -33,6 +36,7 @@ export type NewStore = Omit<
 export type StorePatch = Partial<
   Pick<
     StoreRecord,
+    | "assumptions"
     | "content"
     | "niche"
     | "language"
@@ -84,5 +88,6 @@ export function ownerDTO(store: StoreRecord) {
     updated_at,
     published_at,
     first_published_at,
+    assumptions: store.assumptions ?? [],
   };
 }

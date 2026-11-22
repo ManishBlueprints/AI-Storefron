@@ -151,6 +151,8 @@ export const generateSchema = z
     offer_status: z.enum(["existing", "exploring"]).nullish(),
     existing_offer: z.string().trim().max(500).optional(),
     description: z.string().trim().min(1).max(1000),
+    context_tags: z.array(z.string().trim().min(1).max(120)).max(5).optional(),
+    clarification_answer: z.string().trim().min(1).max(120).optional(),
     audience_size: z.enum(["under_5k", "5k_25k", "25k_plus"]).nullish(),
     language: z.enum(languages),
     handle: z
@@ -170,6 +172,24 @@ export const generateSchema = z
       message: "Describe the offer you already have.",
     },
   );
+export const assessmentInputSchema = z
+  .object({
+    description: generateSchema.shape.description,
+    language: generateSchema.shape.language,
+    context_tags: generateSchema.shape.context_tags,
+    clarification_answer: generateSchema.shape.clarification_answer,
+  })
+  .strict();
+export const assessmentResultSchema = z
+  .object({
+    input_quality: z.enum(["ok", "too_vague", "unusable"]),
+    clarifying_question: z.string().trim().max(200).nullable(),
+    clarification_options: z.array(z.string().trim().min(1).max(60)).max(5),
+  })
+  .strict()
+  .refine((v) => v.input_quality === "ok" || Boolean(v.clarifying_question), {
+    message: "Provide guidance for unclear input.",
+  });
 export type GenerateInput = z.infer<typeof generateSchema>;
 export const slugSchema = z.string().regex(/^[a-z0-9-]{8,64}$/);
 export const tokenSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -199,11 +219,14 @@ export const patchSchema = mutationSchema
   .strict();
 export function detectNiche(text: string): Niche {
   const checks: [Niche, RegExp][] = [
-    ["fitness", /fitness|workout|yoga|gym|exercise|pilates/i],
-    ["finance", /finance|invest|money|stock|budget|saving/i],
-    ["cooking", /cook|recipe|bake|food|chef/i],
-    ["exam_prep", /exam|upsc|neet|jee|study|student|ssc|cat\b/i],
-    ["astrology", /astro|tarot|horoscope|kundli/i],
+    ["fitness", /\b(fitness|workouts?|yoga|gym|exercise|pilates)\b/i],
+    [
+      "finance",
+      /\b(finance|financial|invest(?:ing|ment|ments)?|money|stocks?|budget(?:ing)?|savings?)\b/i,
+    ],
+    ["cooking", /\b(cook(?:ing)?|recipes?|bake|baking|food|chef)\b/i],
+    ["exam_prep", /\b(exams?|upsc|neet|jee|study|studying|ssc|cat)\b/i],
+    ["astrology", /\b(astrology|astro|tarot|horoscopes?|kundli)\b/i],
   ];
   return checks.find(([, regex]) => regex.test(text))?.[0] ?? "other";
 }
@@ -232,7 +255,7 @@ export const focusSuggestions: Record<Niche, string[]> = {
   ],
   other: [],
 };
-const starterTopics = ["Yoga", "Home cooking", "Personal finance", "Exam prep"];
+const starterTopics = ["Books", "Cooking", "Fitness", "Art"];
 const NON_ANSWER =
   /^(?:(?:i\s+)?(?:just\s+)?(?:make|create|post|share)\s+(?:some\s+)?(?:content|videos?|stuff|things)|content|videos?|stuff|things|anything|something|no idea|not sure|idk|nothing|hi+|hello+|hey+|test|lorem ipsum)$/i;
 export function preflight(text: string): {
@@ -261,10 +284,11 @@ export function preflight(text: string): {
     };
   }
   if (
-    !/[a-zA-Z\u0900-\u097f]/.test(value) ||
-    /^(asdf|qwerty|zxcv|hjkl|blah|test\b|lorem ipsum)/i.test(value) ||
-    /(.)\1{5}/.test(value) ||
-    !/[aeiouy\u0900-\u097f]/i.test(value)
+    !/\p{L}/u.test(value) ||
+    /^(?:(?:asdf[a-z]*|qwerty[a-z]*|zxcv[a-z]*|hjkl[a-z]*|blah|test|lorem ipsum)(?:\s+|$))+$/i.test(
+      value,
+    ) ||
+    /(.)\1{5}/.test(value)
   ) {
     return {
       input_quality: "unusable",
@@ -282,20 +306,6 @@ export function preflight(text: string): {
     };
   }
   return null;
-}
-export function composeDescription(
-  description: string,
-  tags: string[] = [],
-): string {
-  const clean = (value: string) =>
-    value
-      .trim()
-      .replace(/[.!?]+$/, "")
-      .trim();
-  return [clean(description), ...tags.map(clean)]
-    .filter(Boolean)
-    .join(". ")
-    .slice(0, 1000);
 }
 export const bannedPhrases =
   /unlock your potential|transform your life|guaranteed? (income|returns?|results?|cure|profit)|risk[- ]free (returns?|invest)|get rich|double your money|cure (diabetes|cancer)|100% (safe|success|guaranteed)/i;
@@ -346,6 +356,13 @@ export function checkGeneratedCopy(text: string, path: (string | number)[]) {
     ]);
   }
 }
+export function checkGeneratedContent(output: ModelOutput) {
+  checkGeneratedCopy(output.bio.headline + ".", ["bio", "headline"]);
+  checkGeneratedCopy(output.bio.about, ["bio", "about"]);
+  output.products.forEach((product, index) => {
+    checkGeneratedCopy(product.description, ["products", index, "description"]);
+  });
+}
 export function repairModel(
   raw: unknown,
   expectedLanguage: Language,
@@ -363,17 +380,7 @@ export function repairModel(
     };
   });
   checkCopy(output);
-  if (output.input_quality === "ok") {
-    checkGeneratedCopy(output.bio.headline + ".", ["bio", "headline"]);
-    checkGeneratedCopy(output.bio.about, ["bio", "about"]);
-    output.products.forEach((product, index) => {
-      checkGeneratedCopy(product.description, [
-        "products",
-        index,
-        "description",
-      ]);
-    });
-  }
+  if (output.input_quality === "ok") checkGeneratedContent(output);
   if (output.input_quality === "too_vague" && !output.clarifying_question) {
     throw new Error("Provide one clarifying question.");
   }

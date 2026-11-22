@@ -1,5 +1,6 @@
 import { apiBaseUrl } from "../shared/api-url";
 import {
+  assessmentResultSchema,
   contentSchema,
   publicContentSchema,
   slugSchema,
@@ -24,6 +25,7 @@ const storeSchema = z.object({
 });
 const ownerStoreSchema = storeSchema.extend({
   content: contentSchema,
+  assumptions: z.array(z.string()).default([]),
   first_published_at: z.string().nullable().optional(),
   publication: publicationSchema.optional(),
   updated_at: z.string().datetime({ offset: true }),
@@ -93,6 +95,13 @@ export async function request(
   }
 }
 export const api = {
+  assessInput: async (
+    input: Pick<
+      GenerateInput,
+      "description" | "language" | "context_tags" | "clarification_answer"
+    >,
+  ) =>
+    assessmentResultSchema.parse(await request("/assess-input", "POST", input)),
   generate: async (input: GenerateInput): Promise<GenerateResult> =>
     z
       .union([generatedSchema, clarificationSchema])

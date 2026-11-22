@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  assessmentInputSchema,
   creatorContext,
   generateSchema,
   mutationSchema,
@@ -11,6 +12,7 @@ import {
   tokenSchema,
 } from "../shared/domain.ts";
 import { publicationMetrics } from "../shared/activation.ts";
+import { assessInput } from "../shared/input-assessment";
 import { generate, ModelUnavailableError } from "../shared/generation.ts";
 import { constantTimeEqual, hashToken, newToken } from "../shared/security.ts";
 import type { ModelConfig } from "../shared/generation.ts";
@@ -19,6 +21,7 @@ import type { StoreRepository } from "./repository";
 
 interface Settings {
   origin: string;
+  allowedOrigins?: string[];
   salt: string;
   ipLimit: number;
   dailyCap: number;
@@ -44,12 +47,15 @@ export function createHandler(db: StoreRepository, settings: Settings) {
       "Access-Control-Max-Age": "86400",
       "X-Content-Type-Options": "nosniff",
     });
-    if (origin === settings.origin) {
+    const allowed =
+      origin !== null &&
+      (settings.allowedOrigins ?? [settings.origin]).includes(origin);
+    if (allowed) {
       headers.set("Access-Control-Allow-Origin", origin);
     }
     const respond = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers });
-    if (origin && origin !== settings.origin) {
+    if (origin && !allowed) {
       return respond({ error: "This origin is not allowed." }, 403);
     }
     if (req.method === "OPTIONS") {
@@ -123,10 +129,30 @@ export function createHandler(db: StoreRepository, settings: Settings) {
         }
         return data;
       }
+      if (req.method === "POST" && path === "/assess-input") {
+        const input = assessmentInputSchema.parse(await json());
+        const gate = preflight(input.description);
+        if (
+          gate &&
+          (!input.clarification_answer || gate.input_quality === "unusable")
+        )
+          return respond(gate);
+        const modelAllowed = await quota();
+        if (!modelAllowed)
+          throw new HttpError(
+            429,
+            "The daily AI limit has been reached. Your input has been kept.",
+          );
+        return respond(await assessInput(input, settings.model));
+      }
       if (req.method === "POST" && path === "/generate") {
         const input = generateSchema.parse(await json());
         const gate = preflight(creatorContext(input));
-        if (gate) return respond(gate);
+        if (
+          gate &&
+          (!input.clarification_answer || gate.input_quality === "unusable")
+        )
+          return respond(gate);
         const modelAllowed = await quota();
         const result = await generate(
           input,
@@ -159,6 +185,11 @@ export function createHandler(db: StoreRepository, settings: Settings) {
               ? input.setup_started_at
               : null,
           new_creator_session: input.new_creator_session === true,
+          assumptions: result.assumptions,
+          ...(input.context_tags ? { context_tags: input.context_tags } : {}),
+          ...(input.clarification_answer
+            ? { clarification_answer: input.clarification_answer }
+            : {}),
           content: result.content,
         });
         return respond({ ...result, slug, edit_token });
@@ -190,6 +221,8 @@ export function createHandler(db: StoreRepository, settings: Settings) {
         const result = await generate(
           {
             description: record.input_text,
+            context_tags: record.context_tags,
+            clarification_answer: record.clarification_answer,
             offer_status: record.offer_status,
             existing_offer: record.existing_offer ?? undefined,
             audience_size: record.audience_size,
@@ -209,6 +242,9 @@ export function createHandler(db: StoreRepository, settings: Settings) {
           record.edit_token_hash,
           input.expected_updated_at,
           {
+            ...(input.scope === "all"
+              ? { assumptions: result.assumptions }
+              : {}),
             content: result.content,
             language: input.language,
             niche: result.content.niche,

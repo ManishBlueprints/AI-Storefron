@@ -59,6 +59,7 @@ export const update = internalMutation({
     tokenHash: v.string(),
     revision: v.string(),
     patch: v.object({
+      assumptions: v.optional(v.array(v.string())),
       content: v.optional(contentValidator),
       niche: v.optional(storeFields.niche),
       language: v.optional(storeFields.language),

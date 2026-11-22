@@ -2,7 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { createHandler } from "../server/handler";
-import { serverSettings } from "../server/settings";
+import { allowedFrontendOrigins, serverSettings } from "../server/settings";
 import type { StoreRepository } from "../server/repository";
 const http = httpRouter();
 const handler = httpAction(async (ctx, request) => {
@@ -39,7 +39,15 @@ const handler = httpAction(async (ctx, request) => {
       serverSettings((name) => process.env[name]),
     )(request);
   } catch {
-    const origin = process.env.APP_ORIGIN;
+    const origin = request.headers.get("Origin");
+    let allowed = false;
+    try {
+      allowed =
+        origin !== null &&
+        allowedFrontendOrigins((name) => process.env[name]).includes(origin);
+    } catch {
+      /* Invalid configuration must not widen CORS access. */
+    }
     return new Response(
       JSON.stringify({
         error:
@@ -51,7 +59,7 @@ const handler = httpAction(async (ctx, request) => {
           "Content-Type": "application/json",
           "Cache-Control": "no-store",
           Vary: "Origin",
-          ...(origin && request.headers.get("Origin") === origin
+          ...(origin && allowed
             ? { "Access-Control-Allow-Origin": origin }
             : {}),
         },

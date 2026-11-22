@@ -21,6 +21,9 @@ async function fixture(t: ReturnType<typeof convexTest>, published = false) {
     niche: content.niche,
     language: content.language,
     input_text: "I teach vegetarian cooking to students",
+    assumptions: ["Affordable meals for students"],
+    context_tags: ["Students"],
+    clarification_answer: "Vegetarian recipes",
     audience_size: "under_5k",
     instagram_handle: "demo.creator",
     offer_status: "exploring",
@@ -64,6 +67,7 @@ function request(
 }
 beforeEach(() => {
   vi.stubEnv("APP_ORIGIN", "https://app.example");
+  vi.stubEnv("APP_ALLOWED_ORIGINS", "");
   vi.stubEnv("RATE_LIMIT_SALT", "test-salt");
   vi.stubEnv("KILO_MODELS", "test:free");
   vi.stubEnv("KILO_JSON_MODELS", "test:free");
@@ -92,6 +96,9 @@ it("serves only a published snapshot and creator-supplied Instagram username", a
   for (const key of [
     "edit_token_hash",
     "input_text",
+    "assumptions",
+    "context_tags",
+    "clarification_answer",
     "setup_session_id",
     "_id",
     "views",
@@ -481,4 +488,160 @@ it("returns a safe configuration error when server settings are missing", async 
   });
   expect(response.status).toBe(503);
   expect((await response.json()).error).toContain("not configured");
+});
+
+it("keeps assumptions private and reloads them with the owner's draft", async () => {
+  const t = convexTest(schema, modules);
+  await fixture(t);
+  const owned = await request(t, `/owner/${slug}`, "GET", undefined, {
+    "x-edit-token": token,
+  });
+  expect((await owned.json()).assumptions).toEqual([
+    "Affordable meals for students",
+  ]);
+  const updated = await t.mutation(internal.storefronts.update, {
+    slug,
+    tokenHash: await hashToken(token),
+    revision,
+    patch: { assumptions: ["Beginner home cooks"] },
+  });
+  expect(updated?.assumptions).toEqual(["Beginner home cooks"]);
+  const reopened = await request(t, `/owner/${slug}`, "GET", undefined, {
+    "x-edit-token": token,
+  });
+  expect((await reopened.json()).assumptions).toEqual(["Beginner home cooks"]);
+});
+
+it("replaces saved assumptions on full regeneration and keeps the public snapshot unchanged", async () => {
+  const t = convexTest(schema, modules);
+  const row = await fixture(t, true);
+  const { source: _source, ...content } = row.content;
+  const output = {
+    ...content,
+    input_quality: "ok",
+    clarifying_question: null,
+    assumptions: ["Short sessions for beginner cooks"],
+    bio: { ...content.bio, headline: "Practical cooking lessons for students" },
+    products: content.products.map((p) => ({
+      ...p,
+      title: "New " + p.title,
+      description: "Together, " + p.description,
+    })),
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(output) } }],
+          }),
+        ),
+    ),
+  );
+  const response = await request(t, "/regenerate", "POST", {
+    slug,
+    edit_token: token,
+    expected_updated_at: revision,
+    scope: "all",
+    language: "en",
+  });
+  expect(response.status).toBe(200);
+  expect((await response.json()).assumptions).toEqual(output.assumptions);
+  expect(
+    (await t.query(internal.storefronts.findOwner, { slug }))?.assumptions,
+  ).toEqual(output.assumptions);
+  expect((await (await request(t, `/public/${slug}`)).json()).content).toEqual(
+    row.published_content,
+  );
+});
+
+it("checks input without inserting a storefront or calling the model for obvious junk", async () => {
+  const t = convexTest(schema, modules);
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  const response = await request(t, "/assess-input", "POST", {
+    description: "asdfghjkl",
+    language: "en",
+  });
+  expect(response.status).toBe(200);
+  expect((await response.json()).input_quality).toBe("unusable");
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(await t.run((ctx) => ctx.db.query("storefronts").collect())).toEqual(
+    [],
+  );
+});
+it("returns semantic input feedback without creating a draft", async () => {
+  const t = convexTest(schema, modules);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    input_quality: "too_vague",
+                    clarifying_question: "What kind of pottery do you teach?",
+                    clarification_options: ["Hand building", "Wheel throwing"],
+                  }),
+                },
+              },
+            ],
+          }),
+        ),
+    ),
+  );
+  const response = await request(t, "/assess-input", "POST", {
+    description: "pottery",
+    language: "en",
+  });
+  expect(response.status).toBe(200);
+  const result = await response.json();
+  expect(result.input_quality).toBe("too_vague");
+  expect(result).not.toHaveProperty("slug");
+  expect(await t.run((ctx) => ctx.db.query("storefronts").collect())).toEqual(
+    [],
+  );
+});
+
+it("allows only configured live and local origins, including preflight and validation errors", async () => {
+  const t = convexTest(schema, modules);
+  vi.stubEnv(
+    "APP_ALLOWED_ORIGINS",
+    "http://127.0.0.1:5173,http://localhost:5173",
+  );
+  for (const origin of [
+    "https://app.example",
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+  ]) {
+    const response = await request(
+      t,
+      "/assess-input",
+      "POST",
+      { description: "12345", language: "en" },
+      { Origin: origin },
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(origin);
+    const options = await request(t, "/assess-input", "OPTIONS", undefined, {
+      Origin: origin,
+    });
+    expect(options.status).toBe(204);
+    expect(options.headers.get("Access-Control-Allow-Origin")).toBe(origin);
+  }
+  for (const origin of [
+    "https://untrusted.example",
+    "http://localhost:5174",
+    "https://app.example.evil.test",
+  ]) {
+    const response = await request(t, "/assess-input", "OPTIONS", undefined, {
+      Origin: origin,
+    });
+    expect(response.status).toBe(403);
+    expect(response.headers.has("Access-Control-Allow-Origin")).toBe(false);
+  }
 });
