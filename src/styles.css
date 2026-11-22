@@ -1259,6 +1259,29 @@ select {
   color: #9c9c9c;
   letter-spacing: 0;
 }
+.product-action {
+  margin-top: 15px;
+}
+.product-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid #cde9da;
+  border-radius: 9px;
+  background: #effaf4;
+  color: #438564;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.product-success svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.product-success strong {
+  font-weight: 650;
+}
 .why-chip {
   font-size: 9px;
   display: flex;

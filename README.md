@@ -17,8 +17,8 @@ npx convex dev
 Choose your existing development project. The CLI generates `convex/_generated/` bindings and writes deployment configuration to the ignored `.env.local`. For this project's development deployment:
 
 ```dotenv
-CONVEX_DEPLOYMENT=dev:bold-bandicoot-351
-VITE_CONVEX_URL=https://bold-bandicoot-351.convex.cloud
+CONVEX_DEPLOYMENT=
+VITE_CONVEX_URL=
 ```
 
 Configure server settings in Convex:

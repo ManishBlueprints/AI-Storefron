@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import {
   BookOpen,
+  Check,
   Instagram,
   CircleHelp,
   MessageCircle,
@@ -35,6 +36,9 @@ export function ProductCard({
   preview = false,
   onReadinessChange,
   disabled = false,
+  actionLabel,
+  actionDone = false,
+  onAction,
 }: {
   product: Product;
   index: number;
@@ -42,6 +46,9 @@ export function ProductCard({
   preview?: boolean;
   onReadinessChange?: (ready: boolean) => void;
   disabled?: boolean;
+  actionLabel?: string;
+  actionDone?: boolean;
+  onAction?: () => void;
 }) {
   const [why, setWhy] = useState(false);
   return (
@@ -78,6 +85,27 @@ export function ProductCard({
             </button>
           )}
         </div>
+        {onAction && (
+          <div className="product-action">
+            {actionDone ? (
+              <p className="product-success" role="status">
+                <Check size={16} aria-hidden="true" />
+                <span>
+                  <strong>Success!</strong> This is a demo storefront, so no
+                  payment was taken.
+                </span>
+              </p>
+            ) : (
+              <button
+                className="button primary full-width"
+                type="button"
+                onClick={onAction}
+              >
+                {actionLabel ?? "Get this offer"}
+              </button>
+            )}
+          </div>
+        )}
         {why && preview && (
           <p className="rationale">{product.price_rationale}</p>
         )}

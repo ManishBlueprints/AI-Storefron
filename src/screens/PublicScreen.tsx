@@ -13,7 +13,8 @@ export default function PublicScreen() {
   const [store, setStore] = useState<Store | null>(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
-    [revision, setRevision] = useState(0);
+    [revision, setRevision] = useState(0),
+    [requested, setRequested] = useState<Record<string, boolean>>({});
   const viewed = useRef("");
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +95,27 @@ export default function PublicScreen() {
         </div>
         <div className="product-grid">
           {store.content.products.map((product, i) => (
-            <ProductCard key={product.id} index={i} product={product} />
+            <ProductCard
+              key={product.id}
+              index={i}
+              product={product}
+              actionLabel={
+                product.format === "one_on_one"
+                  ? "Book a session"
+                  : product.format === "cohort_course"
+                    ? "Book a seat"
+                    : product.format === "community"
+                      ? "Join community"
+                      : "Buy now"
+              }
+              actionDone={Boolean(requested[product.id])}
+              onAction={() =>
+                setRequested((current) => ({
+                  ...current,
+                  [product.id]: true,
+                }))
+              }
+            />
           ))}
         </div>
       </main>
