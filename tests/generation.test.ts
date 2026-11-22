@@ -1,12 +1,19 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  composeDescription,
   contentSchema,
+  creatorContext,
   preflight,
   priceBand,
   repairModel,
 } from "../shared/domain";
 import { templateContent } from "../shared/templates";
-import { generate, parseJSON, systemPrompt } from "../shared/generation";
+import {
+  generate,
+  parseJSON,
+  responseSchema,
+  systemPrompt,
+} from "../shared/generation";
 import { constantTimeEqual, hashToken, newToken } from "../shared/security";
 import type { ModelConfig } from "../shared/generation";
 
@@ -35,21 +42,87 @@ function model() {
   return { ...content, input_quality: "ok", clarifying_question: null };
 }
 
-it("gates vague, gibberish, handle-only, and explicitly unsafe inputs without a model call", async () => {
-  expect(preflight("fitness")?.input_quality).toBe("too_vague");
+it("accepts topic-only input, merges context without duplication, and gates only non-answers", async () => {
+  expect(preflight("fitness")).toBeNull();
+  expect(preflight("fitness training")).toBeNull();
+  expect(preflight("yoga")).toBeNull();
+  expect(preflight("I make content")?.input_quality).toBe("too_vague");
   expect(preflight("asdfghjkl qwerty")?.input_quality).toBe("unusable");
   expect(preflight("@creator")?.clarifying_question).toContain("Instagram");
   expect(preflight("I teach guaranteed returns on stocks")?.input_quality).toBe(
     "unusable",
   );
-  const fetcher = vi.fn();
+  expect(
+    creatorContext({
+      description: "fitness",
+      offer_status: "existing",
+      existing_offer: "Fitness training",
+    }),
+  ).toBe("Fitness training");
+  expect(
+    creatorContext({
+      description: "I teach yoga",
+      offer_status: "existing",
+      existing_offer: "Morning flow sessions",
+    }),
+  ).toBe("I teach yoga. Morning flow sessions");
+  expect(composeDescription("fitness", ["Home workouts", "Beginners"])).toBe(
+    "fitness. Home workouts. Beginners",
+  );
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(response(model()))
+    .mockResolvedValueOnce(response(model()));
+  const generated = await generate(
+    { description: "fitness", language: "en" },
+    { ...config, fetcher },
+  );
+  expect(fetcher).toHaveBeenCalled();
+  expect(generated.input_quality).toBe("ok");
+  const blocked = await generate(
+    { description: "asdfghjkl qwerty", language: "en" },
+    { ...config, fetcher },
+  );
+  expect(blocked.input_quality).toBe("unusable");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it("keeps provider schemas strict without defaults and returns model assumptions", async () => {
+  const schema = JSON.stringify(responseSchema());
+  expect(schema).not.toContain('"default"');
+  expect(schema).toContain("assumptions");
+  expect(schema).toContain("clarification_options");
+  const assumptions = ["Beginner-friendly home workouts"];
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(response({ ...model(), assumptions }));
+  const result = await generate(
+    { description: "fitness", language: "en" },
+    { ...config, fetcher },
+  );
+  expect(result.input_quality).toBe("ok");
+  if (result.input_quality === "ok")
+    expect(result.assumptions).toEqual(assumptions);
+});
+it("returns tappable options when the model needs a clarification", async () => {
+  const fetcher = vi.fn().mockResolvedValue(
+    response({
+      ...model(),
+      input_quality: "too_vague",
+      clarifying_question: "What kind of fitness do you teach?",
+      clarification_options: ["Yoga", "Gym workouts", "Weight loss"],
+    }),
+  );
   const result = await generate(
     { description: "fitness", language: "en" },
     { ...config, fetcher },
   );
   expect(result.input_quality).toBe("too_vague");
-  expect(result).not.toHaveProperty("content");
-  expect(fetcher).not.toHaveBeenCalled();
+  if (result.input_quality !== "ok")
+    expect(result.clarification_options).toEqual([
+      "Yoga",
+      "Gym workouts",
+      "Weight loss",
+    ]);
 });
 describe.each(inputs)("fallback for %s", (description) => {
   it.each(["en", "hinglish"] as const)(

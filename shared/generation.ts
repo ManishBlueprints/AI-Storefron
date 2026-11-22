@@ -41,8 +41,28 @@ export class ModelUnavailableError extends Error {
   }
 }
 export type Generation =
-  | { input_quality: "ok"; clarifying_question: null; content: Content }
-  | { input_quality: "too_vague" | "unusable"; clarifying_question: string };
+  | {
+      input_quality: "ok";
+      clarifying_question: null;
+      assumptions: string[];
+      content: Content;
+    }
+  | {
+      input_quality: "too_vague" | "unusable";
+      clarifying_question: string;
+      clarification_options: string[];
+    };
+function stripDefaults(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripDefaults);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => key !== "default")
+        .map(([key, child]) => [key, stripDefaults(child)]),
+    );
+  }
+  return value;
+}
 export function responseSchema(scope?: Scope) {
   const product = productSchema.omit({ ready_to_sell: true });
   const schema =
@@ -54,7 +74,8 @@ export function responseSchema(scope?: Scope) {
   const { $schema: _schema, ...json } = z.toJSONSchema(schema, {
     target: "draft-7",
   });
-  return json;
+  // Providers reject defaults in strict JSON schemas; parsing still applies them.
+  return stripDefaults(json);
 }
 export function systemPrompt(input: GenerateInput, scope?: Scope) {
   return `You are a creator-commerce strategist for India. Turn a short creator description into a storefront draft. Return ONLY valid JSON. No prose or markdown. This product generates shareable storefront drafts; do not add contact details, requests to message the creator, or claims of integrated booking, checkout, or payment.
@@ -65,7 +86,7 @@ ${
           ? `Preserve product ID ${scope.product_id} and its current format.`
           : "The only keys are headline and about."
       }`
-    : "First judge input: unusable = gibberish, nothing about skills or content, or unsafe topics (adult, illegal, guaranteed medical or financial outcomes); too_vague = no identifiable skill, topic, or profession (for example, only “I make content”). Otherwise ok. A named profession or teaching subject is enough to generate a useful first draft. Do not require an existing product, audience, curriculum, or business plan: discovering offers is your job. Accept typos and informal writing. “I am an English tutor and make online videos” means teaching the English language and is sufficient; do not ask which subject they tutor in English. Make conservative beginner-friendly suggestions when audience or specialism is missing, without inventing credentials or existing assets. Include 2-4 products with DIFFERENT formats. Community billing is monthly. Use sequential IDs p1, p2, etc."
+    : `First judge input: unusable = gibberish, nothing about skills or content, or unsafe topics (adult, illegal, guaranteed medical or financial outcomes); too_vague = only a generic non-answer such as “I make content” or “not sure”, with no topic, skill, or profession. A single topic, named profession, or teaching subject is enough for a useful first draft: “fitness”, “yoga”, or “cooking” are ok, never too_vague. Do not ask which sub-niche when the broad topic is already clear; choose a sensible beginner scope and record it in assumptions. Do not require an existing product, audience, curriculum, or business plan: discovering offers is your job. Accept typos and informal writing. “I am an English tutor and make online videos” means teaching the English language and is sufficient; do not ask which subject they tutor in English. Make conservative beginner-friendly suggestions when audience or specialism is missing, without inventing credentials or existing assets. List 2-4 short assumptions about the audience, level, or offer focus you chose; return an empty list when nothing was assumed. When input_quality is too_vague, write one clarifying_question and 3-4 short clarification_options the creator can tap; for ok, use null and an empty list. Include 2-4 products with DIFFERENT formats. Community billing is monthly. Use sequential IDs p1, p2, etc.`
 }
 Return exactly this JSON schema, with no extra keys: ${JSON.stringify(
     responseSchema(scope),
@@ -102,11 +123,16 @@ function toContent(raw: unknown, language: Language): Generation {
       clarifying_question:
         result.clarifying_question ||
         "Please describe a safe skill or topic you create content about.",
+      clarification_options:
+        result.input_quality === "too_vague"
+          ? result.clarification_options
+          : [],
     };
   }
   return {
     input_quality: "ok",
     clarifying_question: null,
+    assumptions: result.assumptions,
     content: contentSchema.parse({
       niche: result.niche,
       language: result.language,
@@ -230,6 +256,7 @@ export async function generate(
     return {
       input_quality: "ok",
       clarifying_question: null,
+      assumptions: [],
       content: fallback(),
     };
   }
@@ -379,6 +406,7 @@ export async function generate(
           ? {
               input_quality: "ok",
               clarifying_question: null,
+              assumptions: [],
               content: scopeContent(raw, scope, input.language),
             }
           : toContent(raw, input.language);
@@ -450,6 +478,7 @@ export async function generate(
   return {
     input_quality: "ok",
     clarifying_question: null,
+    assumptions: [],
     content: fallback(),
   };
 }

@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import {
   Check,
   ChevronLeft,
@@ -9,6 +14,8 @@ import {
   LockKeyhole,
   Pencil,
   RefreshCw,
+  Sparkles,
+  X,
 } from "lucide-react";
 import { api } from "../api";
 import { activeSetupSession, markCreatorPublished } from "../setup-session";
@@ -277,8 +284,22 @@ export default function EditorScreen() {
     retry,
   } = useOwner();
   const navigate = useNavigate();
+  const routerLocation = useLocation();
   const [searchParams] = useSearchParams();
   const [content, setContent] = useState<Content | null>(null);
+  const [showAssumptions, setShowAssumptions] = useState(true);
+  const assumptions = (() => {
+    const raw = (routerLocation.state as { assumptions?: unknown } | null)
+      ?.assumptions;
+    return Array.isArray(raw)
+      ? raw
+          .filter(
+            (item): item is string =>
+              typeof item === "string" && item.trim().length > 0,
+          )
+          .slice(0, 4)
+      : [];
+  })();
   const [localSaved, setLocalSaved] = useState(true);
   const [baseRevision, setBaseRevision] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false),
@@ -686,6 +707,25 @@ export default function EditorScreen() {
         {(step === "review" || step === "manage") && (
           <SourceNotice content={content} />
         )}
+        {assumptions.length > 0 &&
+          showAssumptions &&
+          (step === "review" || step === "manage") && (
+            <div className="assumption-note" role="status">
+              <Sparkles size={16} aria-hidden="true" />
+              <p>
+                <strong>We assumed:</strong> {assumptions.join(" · ")}. Edit
+                anything below to make it yours.
+              </p>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowAssumptions(false)}
+                aria-label="Dismiss assumptions"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
         {dirty && !localSaved && (
           <Notice tone="info">
             This browser couldn’t save your edits on this device. Keep this page

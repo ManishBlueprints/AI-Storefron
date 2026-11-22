@@ -133,6 +133,11 @@ export const modelSchema = z
   .object({
     input_quality: z.enum(["ok", "too_vague", "unusable"]),
     clarifying_question: z.string().max(200).nullable(),
+    clarification_options: z
+      .array(z.string().trim().min(1).max(60))
+      .max(5)
+      .default([]),
+    assumptions: z.array(z.string().trim().min(1).max(90)).max(4).default([]),
     niche: z.enum(niches),
     language: z.enum(languages),
     bio: bioSchema,
@@ -204,9 +209,36 @@ export function detectNiche(text: string): Niche {
 }
 export const HANDLE_ONLY =
   "We can’t read Instagram yet. Tell us in a line what you do.";
+export const focusSuggestions: Record<Niche, string[]> = {
+  fitness: ["Home workouts", "Gym training", "Weight loss", "Yoga"],
+  finance: ["Budgeting", "Saving money", "Investing basics", "Debt payoff"],
+  cooking: [
+    "Quick everyday meals",
+    "Vegetarian cooking",
+    "Budget meals",
+    "Meal prep",
+  ],
+  exam_prep: [
+    "Study schedules",
+    "Revision plans",
+    "Mock tests",
+    "Current affairs",
+  ],
+  astrology: [
+    "Birth chart reading",
+    "Tarot",
+    "Relationships",
+    "Career guidance",
+  ],
+  other: [],
+};
+const starterTopics = ["Yoga", "Home cooking", "Personal finance", "Exam prep"];
+const NON_ANSWER =
+  /^(?:(?:i\s+)?(?:just\s+)?(?:make|create|post|share)\s+(?:some\s+)?(?:content|videos?|stuff|things)|content|videos?|stuff|things|anything|something|no idea|not sure|idk|nothing|hi+|hello+|hey+|test|lorem ipsum)$/i;
 export function preflight(text: string): {
   input_quality: "too_vague" | "unusable";
   clarifying_question: string;
+  clarification_options: string[];
 } | null {
   const value = text.trim();
   if (
@@ -218,10 +250,15 @@ export function preflight(text: string): {
       input_quality: "unusable",
       clarifying_question:
         "We can help with safe educational content. Describe a skill without adult, illegal, or guaranteed medical or financial outcomes.",
+      clarification_options: [],
     };
   }
   if (/^@[a-zA-Z0-9._]+$/.test(value)) {
-    return { input_quality: "too_vague", clarifying_question: HANDLE_ONLY };
+    return {
+      input_quality: "too_vague",
+      clarifying_question: HANDLE_ONLY,
+      clarification_options: starterTopics,
+    };
   }
   if (
     !/[a-zA-Z\u0900-\u097f]/.test(value) ||
@@ -233,16 +270,32 @@ export function preflight(text: string): {
       input_quality: "unusable",
       clarifying_question:
         "Tell us about a skill or the content you create. For example: “I share easy vegetarian recipes for students.”",
+      clarification_options: [],
     };
   }
-  if (value.split(/\s+/).length < 3) {
+  if (NON_ANSWER.test(value)) {
     return {
       input_quality: "too_vague",
       clarifying_question:
-        "Who do you help, and what do you help them do? Add one specific example.",
+        "What topic or skill do you share? One word is enough to start.",
+      clarification_options: starterTopics,
     };
   }
   return null;
+}
+export function composeDescription(
+  description: string,
+  tags: string[] = [],
+): string {
+  const clean = (value: string) =>
+    value
+      .trim()
+      .replace(/[.!?]+$/, "")
+      .trim();
+  return [clean(description), ...tags.map(clean)]
+    .filter(Boolean)
+    .join(". ")
+    .slice(0, 1000);
 }
 export const bannedPhrases =
   /unlock your potential|transform your life|guaranteed? (income|returns?|results?|cure|profit)|risk[- ]free (returns?|invest)|get rich|double your money|cure (diabetes|cancer)|100% (safe|success|guaranteed)/i;
@@ -330,10 +383,16 @@ export function repairModel(
 export function creatorContext(
   input: Pick<GenerateInput, "description" | "offer_status" | "existing_offer">,
 ) {
-  return [
-    input.description,
-    input.offer_status === "existing" ? input.existing_offer : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const description = input.description.trim();
+  const offer =
+    input.offer_status === "existing"
+      ? (input.existing_offer ?? "").trim()
+      : "";
+  if (!offer) return description;
+  if (!description) return offer;
+  const lowerDescription = description.toLowerCase();
+  const lowerOffer = offer.toLowerCase();
+  if (lowerDescription.includes(lowerOffer)) return description;
+  if (lowerOffer.includes(lowerDescription)) return offer;
+  return `${description}. ${offer}`;
 }

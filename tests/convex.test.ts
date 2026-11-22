@@ -161,7 +161,7 @@ it("handles CORS, preflight, malformed JSON and bounded request bodies", async (
     ).status,
   ).toBe(413);
 });
-it.each(["fitness", "asdfghjkl qwerty", "@creator"])(
+it.each(["I make content", "asdfghjkl qwerty", "@creator"])(
   "returns a clarification without a store for %s",
   async (description) => {
     const t = convexTest(schema, modules);

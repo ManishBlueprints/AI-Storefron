@@ -19,14 +19,22 @@ async function call(path, body, options = {}) {
   return { status: response.status, result };
 }
 for (const [description, quality] of [
-  ["fitness", "too_vague"],
   ["asdfghjkl qwerty", "unusable"],
   ["@creator", "too_vague"],
+  ["I make content", "too_vague"],
 ]) {
   const { result } = await call("/generate", { description, language: "en" });
   assert.equal(result.input_quality, quality);
   assert.equal(result.slug, undefined);
 }
+const topicOnly = await call("/generate", {
+  description: "fitness",
+  language: "en",
+});
+assert.equal(topicOnly.status, 200, JSON.stringify(topicOnly.result));
+assert.equal(topicOnly.result.input_quality, "ok");
+assert.ok(topicOnly.result.slug && topicOnly.result.edit_token);
+assert.ok(Array.isArray(topicOnly.result.assumptions));
 const descriptions = [
   "I teach home fitness workouts for busy women.",
   "I teach personal finance budgeting for college students without investment recommendations.",

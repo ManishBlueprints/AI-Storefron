@@ -3,6 +3,7 @@ import {
   contentSchema,
   publicContentSchema,
   slugSchema,
+  tokenSchema,
 } from "../shared/domain";
 import type { Content, GenerateInput } from "../shared/domain";
 import { publicationSchema } from "../shared/activation";
@@ -29,6 +30,20 @@ const ownerStoreSchema = storeSchema.extend({
 });
 export type OwnedStore = z.infer<typeof ownerStoreSchema>;
 export type Store = z.infer<typeof storeSchema>;
+const generatedSchema = z.object({
+  input_quality: z.literal("ok"),
+  content: contentSchema,
+  assumptions: z.array(z.string()).default([]),
+  slug: slugSchema,
+  edit_token: tokenSchema,
+});
+const clarificationSchema = z.object({
+  input_quality: z.enum(["too_vague", "unusable"]),
+  clarifying_question: z.string().min(1),
+  clarification_options: z.array(z.string()).default([]),
+});
+export type GenerateResult =
+  z.infer<typeof generatedSchema> | z.infer<typeof clarificationSchema>;
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -78,7 +93,10 @@ export async function request(
   }
 }
 export const api = {
-  generate: (input: GenerateInput) => request("/generate", "POST", input),
+  generate: async (input: GenerateInput): Promise<GenerateResult> =>
+    z
+      .union([generatedSchema, clarificationSchema])
+      .parse(await request("/generate", "POST", input)),
   owner: async (slug: string, token: string) =>
     ownerStoreSchema.parse(
       await request(`/owner/${slug}`, "GET", undefined, token),

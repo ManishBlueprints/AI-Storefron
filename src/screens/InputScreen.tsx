@@ -14,11 +14,12 @@ import { beginSetupSession, setupProperties } from "../setup-session";
 import { track } from "../analytics";
 import { readLocal, tokenKey, writeLocal } from "../storage";
 import {
-  contentSchema,
   generateSchema,
   preflight,
   creatorContext,
-  tokenSchema,
+  composeDescription,
+  detectNiche,
+  focusSuggestions,
 } from "../../shared/domain";
 import type { Audience, Language } from "../../shared/domain";
 import { errorText } from "../utils";
@@ -31,6 +32,7 @@ interface InputDraft {
   handle: string;
   offerStatus: "existing" | "exploring" | null;
   existingOffer: string;
+  tags: string[];
 }
 const initial: InputDraft = {
   description: "",
@@ -39,7 +41,14 @@ const initial: InputDraft = {
   handle: "",
   offerStatus: null,
   existingOffer: "",
+  tags: [],
 };
+const audienceTags = ["Beginners", "Busy professionals", "Students", "Women"];
+interface Clarification {
+  question: string;
+  options: string[];
+  answer: string;
+}
 const examples = [
   {
     name: "Fitness",
@@ -83,6 +92,13 @@ export default function InputScreen() {
         ? value.audience!
         : null,
       language: value.language === "hinglish" ? "hinglish" : "en",
+      tags: Array.isArray(value.tags)
+        ? value.tags
+            .filter((tag): tag is string => typeof tag === "string")
+            .map((tag) => tag.trim().slice(0, 60))
+            .filter(Boolean)
+            .slice(0, 5)
+        : [],
     };
   });
   const location = useLocation();
@@ -115,9 +131,11 @@ export default function InputScreen() {
   }
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [storageError, setStorageError] = useState(false);
+    [storageError, setStorageError] = useState(false),
+    [clarify, setClarify] = useState<Clarification | null>(null);
   const pending = useRef(false);
   const recent = readLocal<string | null>("sp:recent", null);
+  const focusTags = focusSuggestions[detectNiche(draft.description)];
   useEffect(() => {
     setStorageError(!writeLocal("sp:input", draft));
   }, [draft]);
@@ -141,7 +159,114 @@ export default function InputScreen() {
     startSetup();
     setDraft((current) => ({ ...current, ...value }));
     setError("");
+    setClarify(null);
   };
+  function isTagSelected(tag: string) {
+    return draft.tags.some(
+      (current) => current.toLowerCase() === tag.toLowerCase(),
+    );
+  }
+  function toggleTag(tag: string) {
+    startSetup();
+    const exists = draft.tags.some(
+      (current) => current.toLowerCase() === tag.toLowerCase(),
+    );
+    setDraft((current) => ({
+      ...current,
+      tags: exists
+        ? current.tags.filter(
+            (item) => item.toLowerCase() !== tag.toLowerCase(),
+          )
+        : [...current.tags, tag].slice(-5),
+    }));
+    setError("");
+  }
+  function answerClarify(answer: string) {
+    const value = answer.trim();
+    if (!value || pending.current) return;
+    const known = draft.tags.some(
+      (tag) => tag.toLowerCase() === value.toLowerCase(),
+    );
+    const tags = known ? draft.tags : [...draft.tags, value].slice(-5);
+    setDraft((current) => ({ ...current, tags }));
+    setError("");
+    setClarify(null);
+    void generateWith(composeDescription(draft.description, tags));
+  }
+  async function generateWith(description: string) {
+    const session = startSetup();
+    const gate = preflight(
+      creatorContext({
+        description,
+        offer_status: draft.offerStatus,
+        existing_offer: draft.existingOffer,
+      }),
+    );
+    if (gate) {
+      if (gate.input_quality === "unusable") {
+        setClarify(null);
+        setError(gate.clarifying_question);
+      } else {
+        setClarify({
+          question: gate.clarifying_question,
+          options: gate.clarification_options,
+          answer: "",
+        });
+      }
+      return;
+    }
+    const parsed = generateSchema.safeParse({
+      ...setupProperties(session),
+      offer_status: draft.offerStatus,
+      ...(draft.offerStatus === "existing"
+        ? { existing_offer: draft.existingOffer }
+        : {}),
+      description,
+      audience_size: draft.audience,
+      language: draft.language,
+      ...(draft.handle ? { handle: draft.handle } : {}),
+    });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0].message);
+      return;
+    }
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    setClarify(null);
+    track("generate_requested", { language: draft.language });
+    try {
+      const result = await api.generate(parsed.data);
+      if (result.input_quality !== "ok") {
+        if (result.input_quality === "unusable") {
+          setError(
+            result.clarifying_question ||
+              "Please add a little more about what you do.",
+          );
+        } else {
+          setClarify({
+            question: result.clarifying_question,
+            options: result.clarification_options,
+            answer: "",
+          });
+        }
+        track("generate_failed", { language: draft.language });
+        return;
+      }
+      writeLocal(tokenKey(result.slug), result.edit_token);
+      writeLocal("sp:recent", result.slug);
+      track("generate_succeeded", result.content);
+      navigate(`/edit/${result.slug}#t=${result.edit_token}`, {
+        state: { generated: true, assumptions: result.assumptions },
+      });
+    } catch (error) {
+      setError(errorText(error));
+      track("generate_failed", { language: draft.language });
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (pending.current || !draft.description.trim()) return;
@@ -156,63 +281,7 @@ export default function InputScreen() {
       navigate("/setup/offers");
       return;
     }
-    const session = startSetup();
-    const gate = preflight(
-      creatorContext({
-        description: draft.description,
-        offer_status: draft.offerStatus,
-        existing_offer: draft.existingOffer,
-      }),
-    );
-    if (gate) {
-      setError(gate.clarifying_question);
-      return;
-    }
-    const parsed = generateSchema.safeParse({
-      ...setupProperties(session),
-      offer_status: draft.offerStatus,
-      ...(draft.offerStatus === "existing"
-        ? { existing_offer: draft.existingOffer }
-        : {}),
-      description: draft.description,
-      audience_size: draft.audience,
-      language: draft.language,
-      ...(draft.handle ? { handle: draft.handle } : {}),
-    });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0].message);
-      return;
-    }
-    pending.current = true;
-    setBusy(true);
-    setError("");
-    track("generate_requested", { language: draft.language });
-    try {
-      const result = await api.generate(parsed.data);
-      if (result.input_quality !== "ok") {
-        setError(
-          result.clarifying_question ||
-            "Please add a little more about what you do.",
-        );
-        track("generate_failed", { language: draft.language });
-        return;
-      }
-      const content = contentSchema.parse(result.content);
-      if (!tokenSchema.safeParse(result.edit_token).success)
-        throw new Error("We couldn’t open the draft safely. Please retry.");
-      writeLocal(tokenKey(result.slug), result.edit_token);
-      writeLocal("sp:recent", result.slug);
-      track("generate_succeeded", content);
-      navigate(`/edit/${result.slug}#t=${result.edit_token}`, {
-        state: { generated: true },
-      });
-    } catch (error) {
-      setError(errorText(error));
-      track("generate_failed", { language: draft.language });
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
+    await generateWith(composeDescription(draft.description, draft.tags));
   }
   return (
     <>
@@ -304,7 +373,9 @@ export default function InputScreen() {
                         <button
                           type="button"
                           key={example.name}
-                          onClick={() => update({ description: example.text })}
+                          onClick={() =>
+                            update({ description: example.text, tags: [] })
+                          }
                         >
                           <span>{example.icon}</span>
                           {example.name}
@@ -312,6 +383,50 @@ export default function InputScreen() {
                         </button>
                       ))}
                     </div>
+                  </div>
+                  <div className="quick-add">
+                    <p className="quick-add-title">
+                      Help AI get it right the first time <span>Optional</span>
+                    </p>
+                    <div className="quick-add-row">
+                      <span>This is for</span>
+                      <div>
+                        {audienceTags.map((tag) => (
+                          <button
+                            type="button"
+                            key={tag}
+                            aria-pressed={isTagSelected(tag)}
+                            className={isTagSelected(tag) ? "selected" : ""}
+                            onClick={() => toggleTag(tag)}
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {focusTags.length > 0 && (
+                      <div className="quick-add-row">
+                        <span>You focus on</span>
+                        <div>
+                          {focusTags.map((tag) => (
+                            <button
+                              type="button"
+                              key={tag}
+                              aria-pressed={isTagSelected(tag)}
+                              className={isTagSelected(tag) ? "selected" : ""}
+                              onClick={() => toggleTag(tag)}
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {draft.tags.length > 0 && (
+                      <p className="quick-add-summary">
+                        We’ll include: {draft.tags.join(" · ")}
+                      </p>
+                    )}
                   </div>
                 </>
               )}
@@ -454,6 +569,68 @@ export default function InputScreen() {
                     </p>
                   </div>
                 </>
+              )}
+              {clarify && (
+                <div className="clarify-card" aria-live="polite">
+                  <div className="clarify-head">
+                    <Sparkles size={16} />
+                    <p>{clarify.question}</p>
+                  </div>
+                  {clarify.options.length > 0 && (
+                    <div className="clarify-options">
+                      {clarify.options.map((option) => (
+                        <button
+                          type="button"
+                          key={option}
+                          onClick={() => answerClarify(option)}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="clarify-answer">
+                    <input
+                      aria-label="Your answer"
+                      value={clarify.answer}
+                      maxLength={120}
+                      placeholder="Or type a quick answer"
+                      onChange={(event) =>
+                        setClarify((current) =>
+                          current
+                            ? { ...current, answer: event.target.value }
+                            : current,
+                        )
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          answerClarify(clarify.answer);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="button secondary"
+                      disabled={!clarify.answer.trim()}
+                      onClick={() => answerClarify(clarify.answer)}
+                    >
+                      Use this
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="clarify-dismiss"
+                    onClick={() => {
+                      setClarify(null);
+                      if (!about) navigate("/setup/about");
+                    }}
+                  >
+                    {about
+                      ? "Edit my description instead"
+                      : "Change my description"}
+                  </button>
+                </div>
               )}
               {error && <Notice>{error}</Notice>}
               {storageError && (
