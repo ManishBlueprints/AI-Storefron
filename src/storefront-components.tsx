@@ -159,7 +159,7 @@ export function BioCard({
       </div>
       <div className="bio-body">
         <div className="bio-heading">
-          <span className="tiny-label">WELCOME TO MY STOREFRONT</span>
+          <span className="tiny-label">BIO · ABOUT ME</span>
           {actions}
         </div>
         <Heading className="store-headline">{content.bio.headline}</Heading>

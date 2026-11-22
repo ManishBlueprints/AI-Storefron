@@ -287,6 +287,7 @@ export default function EditorScreen() {
     block?: string;
     language: Language;
   } | null>(null);
+  const [confirmPublish, setConfirmPublish] = useState(false);
   const [previous, setPrevious] = useState<
     Record<string, Content["bio"] | Product>
   >(() => readLocal(`sp:history:${slug}`, {}));
@@ -653,8 +654,7 @@ export default function EditorScreen() {
           <ol className="setup-steps" aria-label="Store setup progress">
             {[
               ["review", "Review offers"],
-              ["preview", "Preview"],
-              ["publish", "Publish"],
+              ["preview", "Preview & publish"],
             ].map(([key, label], i) => (
               <li key={key} aria-current={step === key ? "step" : undefined}>
                 <span>{i + 1}</span>
@@ -669,18 +669,14 @@ export default function EditorScreen() {
               ? "Which offers can you deliver?"
               : step === "preview"
                 ? "See your store before you share."
-                : step === "publish"
-                  ? "Ready to publish your store?"
-                  : "Manage your storefront."}
+                : "Manage your storefront."}
           </h1>
           <p>
             {step === "review"
               ? "Choose at least one offer you’re ready to deliver. Other ideas stay private."
               : step === "preview"
-                ? "This is how your selected offers will look. Nothing is live until you publish."
-                : step === "publish"
-                  ? "Publish your selected offers and get a link you can share."
-                  : "Edit your draft here. Your published version stays live until you publish an update."}
+                ? "This is how your selected offers will look. Publish when you’re ready — nothing is live until then."
+                : "Edit your draft here. Your published version stays live until you publish an update."}
           </p>
         </div>
         {(step === "review" || step === "manage") && (
@@ -728,15 +724,18 @@ export default function EditorScreen() {
             )}
             <section className="review-bio" aria-label="Write your bio">
               <div>
-                <span className="eyebrow">WRITE YOUR BIO</span>
+                <span className="section-kicker">Bio</span>
                 <h2>{content.bio.headline}</h2>
                 <p>{content.bio.about}</p>
               </div>
               {actions("bio")}
             </section>
             <div className="review-count" id="offers-review">
-              <h2>Your offers</h2>
-              <span>
+              <div className="review-count-copy">
+                <span className="section-kicker">Offers</span>
+                <h2>Your offers</h2>
+              </div>
+              <span className="offer-count">
                 {readyCount} selected · {content.products.length} ideas
               </span>
             </div>
@@ -774,60 +773,79 @@ export default function EditorScreen() {
         )}
         {step === "preview" && (
           <>
+            <section
+              className="publish-summary"
+              aria-label="Publishing summary"
+            >
+              <div>
+                <span className="section-kicker">Ready to publish</span>
+                <h2>
+                  {readyCount} {readyCount === 1 ? "offer" : "offers"} will be
+                  public
+                </h2>
+                <p>
+                  {content.products.length - readyCount} private draft{" "}
+                  {content.products.length - readyCount === 1
+                    ? "idea"
+                    : "ideas"}{" "}
+                  will stay hidden.
+                </p>
+              </div>
+              {store.status === "published" && (
+                <p className="publish-warning">
+                  Publishing will replace your current live version. Your public
+                  link stays the same.
+                </p>
+              )}
+            </section>
             <div className="buyer-preview public-store">
-              <BioCard
-                instagramHandle={store.instagram_handle}
-                content={content}
-                headingLevel={2}
-                actions={previewEdit("bio")}
-              />
-              <div className="products-heading">
-                <h2>Explore my offers</h2>
-                <span>
-                  {readyCount} {readyCount === 1 ? "offer" : "offers"}
-                </span>
-              </div>
-              <div className="product-grid">
-                {selectedProducts.map((product, i) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    index={i}
-                    actions={previewEdit(product.id)}
-                  />
-                ))}
-              </div>
+              <section className="public-bio" aria-label="Bio">
+                <BioCard
+                  instagramHandle={store.instagram_handle}
+                  content={content}
+                  headingLevel={2}
+                  actions={previewEdit("bio")}
+                />
+              </section>
+              <section
+                className="public-offers"
+                aria-labelledby="editor-offers-title"
+              >
+                <div className="offers-heading">
+                  <div className="offers-heading-copy">
+                    <span className="section-kicker">Offers</span>
+                    <h2 id="editor-offers-title">Explore my offers</h2>
+                  </div>
+                  <span className="offer-count">
+                    {readyCount} {readyCount === 1 ? "offer" : "offers"}
+                  </span>
+                </div>
+                <div className="product-grid">
+                  {selectedProducts.map((product, i) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      index={i}
+                      actions={previewEdit(product.id)}
+                    />
+                  ))}
+                </div>
+              </section>
               <p className="helper">
                 Preview only. Your changes stay private until you publish.
               </p>
             </div>
           </>
         )}
-        {step === "publish" && (
-          <section className="publish-setup" aria-label="Publishing settings">
-            <div className="launch-summary">
-              <h2>Ready to publish</h2>
-              <p>
-                {readyCount} {readyCount === 1 ? "offer" : "offers"} will be
-                public. {content.products.length - readyCount} private draft{" "}
-                {content.products.length - readyCount === 1 ? "idea" : "ideas"}{" "}
-                will stay hidden.
-              </p>
-              {store.status === "published" && (
-                <p>This will replace your current published version.</p>
-              )}
-            </div>
-          </section>
-        )}
       </main>
       {step !== "manage" && (
         <footer className="workflow-footer">
           <div>
-            {step !== "review" ? (
+            {step === "preview" ? (
               <button
                 className="button secondary"
                 disabled={Boolean(busy)}
-                onClick={() => goTo(step === "preview" ? "review" : "preview")}
+                onClick={() => goTo("review")}
               >
                 Back
               </button>
@@ -847,24 +865,28 @@ export default function EditorScreen() {
             <button
               className="button primary"
               disabled={Boolean(busy) || !readyCount}
-              onClick={() =>
-                step === "publish"
-                  ? void publish()
-                  : goTo(step === "review" ? "preview" : "publish")
-              }
+              onClick={() => {
+                if (step === "review") {
+                  goTo("preview");
+                  return;
+                }
+                if (store.status === "published") {
+                  setConfirmPublish(true);
+                  return;
+                }
+                void publish();
+              }}
             >
               {busy ? (
                 <LoaderCircle size={17} className="spin" />
-              ) : step === "publish" ? (
+              ) : step === "preview" ? (
                 <Globe2 size={17} />
               ) : null}
               {step === "review"
                 ? "Continue to preview"
-                : step === "preview"
-                  ? "Continue to publish"
-                  : store.status === "published"
-                    ? "Publish update"
-                    : "Publish storefront"}
+                : store.status === "published"
+                  ? "Publish update"
+                  : "Publish storefront"}
             </button>
           </div>
         </footer>
@@ -904,6 +926,36 @@ export default function EditorScreen() {
             setEditing(null);
           }}
         />
+      )}
+      {confirmPublish && (
+        <Modal
+          title="Replace your published store?"
+          close={() => setConfirmPublish(false)}
+        >
+          <p className="dialog-copy">
+            Your current public storefront will be replaced with this version.
+            Your public link stays the same, and the previous version will no
+            longer be live.
+          </p>
+          <div className="modal-footer">
+            <button
+              className="button secondary"
+              onClick={() => setConfirmPublish(false)}
+            >
+              Keep current version
+            </button>
+            <button
+              className="button primary"
+              disabled={Boolean(busy)}
+              onClick={() => {
+                setConfirmPublish(false);
+                void publish();
+              }}
+            >
+              Publish update
+            </button>
+          </div>
+        </Modal>
       )}
       {confirmation && (
         <Modal title="Replace your edits?" close={() => setConfirmation(null)}>

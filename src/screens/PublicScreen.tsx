@@ -82,42 +82,49 @@ export default function PublicScreen() {
         <span>CREATED WITH SUPERPROFILE</span>
       </div>
       <main className="public-store">
-        <BioCard
-          content={store.content}
-          instagramHandle={store.instagram_handle}
-        />
-        <div className="products-heading">
-          <h2>Explore my offers</h2>
-          <span>
-            {store.content.products.length}{" "}
-            {store.content.products.length === 1 ? "offering" : "offerings"}
-          </span>
-        </div>
-        <div className="product-grid">
-          {store.content.products.map((product, i) => (
-            <ProductCard
-              key={product.id}
-              index={i}
-              product={product}
-              actionLabel={
-                product.format === "one_on_one"
-                  ? "Book a session"
-                  : product.format === "cohort_course"
-                    ? "Book a seat"
-                    : product.format === "community"
-                      ? "Join community"
-                      : "Buy now"
-              }
-              actionDone={Boolean(requested[product.id])}
-              onAction={() =>
-                setRequested((current) => ({
-                  ...current,
-                  [product.id]: true,
-                }))
-              }
-            />
-          ))}
-        </div>
+        <section className="public-bio" aria-label="Bio">
+          <BioCard
+            content={store.content}
+            instagramHandle={store.instagram_handle}
+          />
+        </section>
+        <section className="public-offers" aria-labelledby="offers-title">
+          <div className="offers-heading">
+            <div className="offers-heading-copy">
+              <span className="section-kicker">Offers</span>
+              <h2 id="offers-title">Explore my offers</h2>
+            </div>
+            <span className="offer-count">
+              {store.content.products.length}{" "}
+              {store.content.products.length === 1 ? "offering" : "offerings"}
+            </span>
+          </div>
+          <div className="product-grid">
+            {store.content.products.map((product, i) => (
+              <ProductCard
+                key={product.id}
+                index={i}
+                product={product}
+                actionLabel={
+                  product.format === "one_on_one"
+                    ? "Book a session"
+                    : product.format === "cohort_course"
+                      ? "Book a seat"
+                      : product.format === "community"
+                        ? "Join community"
+                        : "Buy now"
+                }
+                actionDone={Boolean(requested[product.id])}
+                onAction={() =>
+                  setRequested((current) => ({
+                    ...current,
+                    [product.id]: true,
+                  }))
+                }
+              />
+            ))}
+          </div>
+        </section>
       </main>
       <footer className="public-footer">
         <span>Made with</span>

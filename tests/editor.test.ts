@@ -82,9 +82,9 @@ describe("guided editor navigation", () => {
       expect(editorStep(status, "publish", 0)).toBe("review");
     }
   });
-  it("preserves valid steps and rejects unknown or draft-management steps", () => {
+  it("preserves valid steps and maps legacy publish links to preview", () => {
     expect(editorStep("draft", "preview", 1)).toBe("preview");
-    expect(editorStep("draft", "publish", 1)).toBe("publish");
+    expect(editorStep("draft", "publish", 1)).toBe("preview");
     expect(editorStep("published", "review", 1)).toBe("review");
     expect(editorStep("draft", "manage", 1)).toBe("review");
     expect(editorStep("draft", "unknown", 1)).toBe("review");

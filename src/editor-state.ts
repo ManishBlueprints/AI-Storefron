@@ -32,7 +32,7 @@ export function restoreBlock(
   return parsed.data;
 }
 
-export type EditorStep = "review" | "preview" | "publish" | "manage";
+export type EditorStep = "review" | "preview" | "manage";
 
 export function editorStep(
   status: "draft" | "published",
@@ -41,6 +41,6 @@ export function editorStep(
 ): EditorStep {
   if (requested === "review") return "review";
   if (requested === "preview" || requested === "publish")
-    return readyCount > 0 ? requested : "review";
+    return readyCount > 0 ? "preview" : "review";
   return status === "published" ? "manage" : "review";
 }

@@ -59,7 +59,7 @@ Never put provider or Convex deploy credentials in `VITE_` variables. Rebuild th
 
 ## Product flow
 
-Home → About you → Your offers → Generate → Review offers → Preview → Publish → Share
+Home → About you → Your offers → Generate → Review offers → Preview & publish → Share
 
 - Saved setup is clearly shown with a description preview, Continue setup and a confirmed Start fresh action.
 - Audience, language and optional Instagram context stay visible during setup. The username becomes a clickable public profile link; Instagram is not read.
